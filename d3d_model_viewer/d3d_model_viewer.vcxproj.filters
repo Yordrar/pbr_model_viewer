@@ -39,6 +39,9 @@
     <ClCompile Include="src\imgui_example_app.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
+    <ClCompile Include="src\ImGuiFileDialog.cpp">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\imgui.h">
@@ -63,6 +66,15 @@
       <Filter>Archivos de origen</Filter>
     </ClInclude>
     <ClInclude Include="src\imstb_truetype.h">
+      <Filter>Archivos de origen</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dirent.h">
+      <Filter>Archivos de origen</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ImGuiFileDialog.h">
+      <Filter>Archivos de origen</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ImGuiFileDialogConfig.h">
       <Filter>Archivos de origen</Filter>
     </ClInclude>
   </ItemGroup>
