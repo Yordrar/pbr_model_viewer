@@ -15,6 +15,7 @@
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <thread>
 
 namespace Colors {
 	XMGLOBALCONST DirectX::XMFLOAT4 White = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -57,14 +58,29 @@ D3D11_BUFFER_DESC vertex_indices_desc;
 D3D11_SUBRESOURCE_DATA vertex_indices_subresource_data;
 ID3D11Buffer* vertex_index_buffer = nullptr;
 
+// Vertex normals buffer, its buffer description and its subresource data
+Vertex* vertex_normal_data = nullptr;
+int normal_count = 0;
+D3D11_BUFFER_DESC vertex_normal_desc;
+D3D11_SUBRESOURCE_DATA vertex_normal_subresource_data;
+ID3D11Buffer* vertex_normal_buffer = nullptr;
+
+// View options
+bool show_wireframe = false;
+bool show_normals = false;
+
+// Loading popup
+std::thread load_thread;
+bool show_loading_popup = false;
+
 // Camera
-DirectX::XMVECTOR camera_position = DirectX::XMVectorSet(0, 0, 2, 1);
+DirectX::XMVECTOR camera_position = DirectX::XMVectorSet(0, 0, 5, 1);
 DirectX::XMVECTOR camera_lookat_vector = DirectX::XMVectorSet(0, 0, -1, 1);
 DirectX::XMVECTOR camera_right = DirectX::XMVectorSet(1, 0, 0, 1);
+DirectX::XMVECTOR camera_up = DirectX::XMVectorSet(0, 1, 0, 1);
 float near_plane = 0.1f;
 float far_plane = 500.0f;
 void rotate_camera_orbital(float angles_x, float angles_y) {
-
 	// Create rotation quaternion for x axis
 	float angle_x_rad = DirectX::XMConvertToRadians(angles_x / 2.0f);
 	DirectX::XMFLOAT3 quaternion_x_imaginary(sinf(angle_x_rad) * camera_right.m128_f32[0], sinf(angle_x_rad) * camera_right.m128_f32[1], sinf(angle_x_rad) * camera_right.m128_f32[2]);
@@ -78,7 +94,7 @@ void rotate_camera_orbital(float angles_x, float angles_y) {
 	DirectX::XMVECTOR quaternion_y = DirectX::XMVectorSet(quaternion_y_imaginary.x, quaternion_y_imaginary.y, quaternion_y_imaginary.z, quaternion_y_real);
 
 	// Combine quaternions
-	DirectX::XMVECTOR quaternion = (DirectX::XMQuaternionMultiply(quaternion_x, quaternion_y));
+	DirectX::XMVECTOR quaternion = DirectX::XMQuaternionNormalize(DirectX::XMQuaternionMultiply(quaternion_x, quaternion_y));
 
 	//Apply result quaternion to camera position and right vector
 	{
@@ -96,11 +112,15 @@ void rotate_camera_orbital(float angles_x, float angles_y) {
 		camera_right.m128_f32[2] = intermediate_result.m128_f32[2];
 	}
 
-	camera_lookat_vector = DirectX::XMVectorSubtract(DirectX::XMVectorSet(0, 0, 0, 2), camera_position);
+	// Update camera lookat and up vectors
+	camera_lookat_vector = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(DirectX::XMVectorSet(0, 0, 0, 2), camera_position));
+	camera_lookat_vector.m128_f32[3] = 1;
+	camera_up = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(camera_lookat_vector, DirectX::XMVectorNegate(camera_right)));
+	camera_up.m128_f32[3] = 1;
 
-	// Create perspective transform and bind ti to the vertex shader
+	// Create perspective transform and bind it to the vertex shader
 	DirectX::XMMATRIX persp_transf;
-	persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera_position, camera_lookat_vector, DirectX::XMVectorSet(0, 1, 0, 0)) * DirectX::XMMatrixPerspectiveFovRH(DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height), near_plane, far_plane));
+	persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera_position, camera_lookat_vector, camera_up) * DirectX::XMMatrixPerspectiveFovRH(DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height), near_plane, far_plane));
 	D3D11_BUFFER_DESC transform_desc;
 	transform_desc.ByteWidth = sizeof(DirectX::XMMATRIX);
 	transform_desc.Usage = D3D11_USAGE_DYNAMIC;
@@ -145,6 +165,7 @@ std::vector<std::string> split(std::string& str, char pattern) {
 	return result;
 }
 void load_obj_file(std::string filename) {
+	show_loading_popup = true;
 	std::vector<Vertex> parsed_vertices;
 	std::vector<UINT> parsed_indices;
 	std::vector<DirectX::XMFLOAT3> parsed_normals;
@@ -199,9 +220,9 @@ void load_obj_file(std::string filename) {
 			parsed_indices.push_back(face_vertex3);
 
 			// Read normal indices and assign normals
-			float normal1 = std::stoi(split(face_str[1], '/')[2])-1;
-			float normal2 = std::stoi(split(face_str[2], '/')[2])-1;
-			float normal3 = std::stoi(split(face_str[3], '/')[2])-1;
+			int normal1 = std::stoi(split(face_str[1], '/')[2])-1;
+			int normal2 = std::stoi(split(face_str[2], '/')[2])-1;
+			int normal3 = std::stoi(split(face_str[3], '/')[2])-1;
 			parsed_vertices[face_vertex1].normal = parsed_normals[normal1];
 			parsed_vertices[face_vertex2].normal = parsed_normals[normal2];
 			parsed_vertices[face_vertex3].normal = parsed_normals[normal3];
@@ -227,6 +248,20 @@ void load_obj_file(std::string filename) {
 	vertex_indices_data = new UINT[indices_count];
 	std::copy(parsed_indices.begin(), parsed_indices.end(), vertex_indices_data);
 
+	// Destroy old normal buffer if existed and create new with parsed normals
+	normal_count = parsed_normals.size();
+	if (vertex_normal_data) delete[] vertex_normal_data;
+	vertex_normal_data = new Vertex[vertices_count * 2];
+	int j = 0;
+	for (int i = 0; i < vertices_count * 2; i += 2) {
+		vertex_normal_data[i] = vertex_buffer_data[j];
+		vertex_normal_data[i + 1] = vertex_buffer_data[j];
+		vertex_normal_data[i + 1].position.x += vertex_buffer_data[j].normal.x / 10.0f;
+		vertex_normal_data[i + 1].position.y += vertex_buffer_data[j].normal.y / 10.0f;
+		vertex_normal_data[i + 1].position.z += vertex_buffer_data[j].normal.z / 10.0f;
+		j++;
+	}
+
 	// Create vertex buffer description
 	vertex_buffer_desc.ByteWidth = vertices_count * sizeof(Vertex);
 	vertex_buffer_desc.Usage = D3D11_USAGE_IMMUTABLE;
@@ -251,6 +286,22 @@ void load_obj_file(std::string filename) {
 	// Create hardware vertex index buffer and bind it to the input assembler
 	if (vertex_index_buffer) vertex_index_buffer->Release();
 	d3d_device->CreateBuffer(&vertex_indices_desc, &vertex_indices_subresource_data, &vertex_index_buffer);
+
+
+	// Create normal buffer description
+	vertex_normal_desc.ByteWidth = vertices_count * 2 * sizeof(Vertex);
+	vertex_normal_desc.Usage = D3D11_USAGE_IMMUTABLE;
+	vertex_normal_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	vertex_normal_desc.CPUAccessFlags = 0;
+	vertex_normal_desc.MiscFlags = 0;
+	vertex_normal_desc.StructureByteStride = sizeof(Vertex);
+	vertex_normal_subresource_data.pSysMem = vertex_normal_data;
+	// Create hardware normal buffer and bind it to the input assembler
+	if (vertex_normal_buffer) vertex_normal_buffer->Release();
+	d3d_device->CreateBuffer(&vertex_normal_desc, &vertex_normal_subresource_data, &vertex_normal_buffer);
+
+	show_loading_popup = false;
+	ImGui::CloseCurrentPopup();
 }
 
 
@@ -288,7 +339,8 @@ LRESULT CALLBACK WindowCallback(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 			int pos_x = GET_X_LPARAM(lParam);
 			int pos_y = GET_Y_LPARAM(lParam);
 
-			rotate_camera_orbital((pos_y - previous_pos_y)/3.5f, (pos_x - previous_pos_x)/3.5f);
+			rotate_camera_orbital((pos_y - previous_pos_y) / 3.5f, 0);
+			rotate_camera_orbital(0, (pos_x - previous_pos_x) / 3.5f);
 
 			previous_pos_x = pos_x;
 			previous_pos_y = pos_y;
@@ -301,9 +353,9 @@ LRESULT CALLBACK WindowCallback(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 		camera_position.m128_f32[1] *= 1.0f - (delta / 500.0f);
 		camera_position.m128_f32[2] *= 1.0f - (delta / 500.0f);
 
-		// Create perspective transform and bind ti to the vertex shader
+		// Create perspective transform and bind it to the vertex shader
 		DirectX::XMMATRIX persp_transf;
-		persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera_position, camera_lookat_vector, DirectX::XMVectorSet(0, 1, 0, 0)) * DirectX::XMMatrixPerspectiveFovRH(DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height), near_plane, far_plane));
+		persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera_position, camera_lookat_vector, camera_up) * DirectX::XMMatrixPerspectiveFovRH(DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height), near_plane, far_plane));
 		D3D11_BUFFER_DESC transform_desc;
 		transform_desc.ByteWidth = sizeof(DirectX::XMMATRIX);
 		transform_desc.Usage = D3D11_USAGE_DYNAMIC;
@@ -418,11 +470,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 	D3D11_VIEWPORT viewport;
 	viewport.TopLeftX = 0;
 	viewport.TopLeftY = 0;
-	viewport.Width = screen_width;
-	viewport.Height = screen_height;
+	viewport.Width = (float)screen_width;
+	viewport.Height = (float)screen_height;
 	viewport.MinDepth = 0;
 	viewport.MaxDepth = 1;
 	d3d_context->RSSetViewports(1, &viewport);
+
+	// Set culling mode to clockwise because we use a right handed coordinate system
+	D3D11_RASTERIZER_DESC rasterizer_desc;
+	rasterizer_desc.FillMode = D3D11_FILL_SOLID;
+	rasterizer_desc.CullMode = D3D11_CULL_BACK;
+	rasterizer_desc.FrontCounterClockwise = true;
+	rasterizer_desc.DepthBias = 0;
+	rasterizer_desc.SlopeScaledDepthBias = 0;
+	rasterizer_desc.DepthBiasClamp = 0;
+	rasterizer_desc.DepthClipEnable = true;
+	rasterizer_desc.ScissorEnable = false;
+	rasterizer_desc.MultisampleEnable = false;
+	rasterizer_desc.AntialiasedLineEnable = false;
+	ID3D11RasterizerState* rasterizer_state;
+	d3d_device->CreateRasterizerState(&rasterizer_desc, &rasterizer_state);
+	d3d_context->RSSetState(rasterizer_state);
 	
 	// Create vertex format description
 	D3D11_INPUT_ELEMENT_DESC vertex_desc_buffer[] = {
@@ -434,13 +502,28 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 	ID3D11InputLayout* input_layout;
 	ID3DBlob* vertex_shader_blob;
 	D3DReadFileToBlob(L"VertexShader.cso", &vertex_shader_blob);
-	d3d_device->CreateInputLayout(vertex_desc_buffer, sizeof(vertex_desc_buffer)/sizeof(D3D11_INPUT_ELEMENT_DESC), vertex_shader_blob->GetBufferPointer(), vertex_shader_blob->GetBufferSize(), &input_layout);
+	d3d_device->CreateInputLayout(vertex_desc_buffer,
+								  sizeof(vertex_desc_buffer)/sizeof(D3D11_INPUT_ELEMENT_DESC),
+								  vertex_shader_blob->GetBufferPointer(),
+								  vertex_shader_blob->GetBufferSize(), &input_layout);
 	d3d_context->IASetInputLayout(input_layout);
 
 	// Create and set vertex shader
 	ID3D11VertexShader* vertex_shader;
-	d3d_device->CreateVertexShader(vertex_shader_blob->GetBufferPointer(), vertex_shader_blob->GetBufferSize(), nullptr, &vertex_shader);
+	d3d_device->CreateVertexShader(vertex_shader_blob->GetBufferPointer(),
+								   vertex_shader_blob->GetBufferSize(),
+								   nullptr,
+								   &vertex_shader);
 	d3d_context->VSSetShader(vertex_shader, nullptr, 0);
+
+	// Create vertex normals shader
+	ID3DBlob* vertex_normal_shader_blob;
+	D3DReadFileToBlob(L"normal_vs.cso", &vertex_normal_shader_blob);
+	ID3D11VertexShader* vertex_normal_shader;
+	d3d_device->CreateVertexShader(vertex_normal_shader_blob->GetBufferPointer(),
+								   vertex_normal_shader_blob->GetBufferSize(),
+								   nullptr,
+								   &vertex_normal_shader);
 
 	// Create and set pixel shader
 	ID3DBlob* pixel_shader_blob;
@@ -451,7 +534,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 
 	// Create perspective transform and bind ti to the vertex shader
 	DirectX::XMMATRIX persp_transf;
-	persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera_position, camera_lookat_vector, DirectX::XMVectorSet(0, 1, 0, 0)) * DirectX::XMMatrixPerspectiveFovRH(DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height), near_plane, far_plane));
+	persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera_position, camera_lookat_vector, camera_up) * DirectX::XMMatrixPerspectiveFovRH(DirectX::XM_PI / 4.0f,
+											  float(screen_width) / float(screen_height),
+											  near_plane,
+											  far_plane));
 	D3D11_BUFFER_DESC transform_desc;
 	transform_desc.ByteWidth = sizeof(DirectX::XMMATRIX);
 	transform_desc.Usage = D3D11_USAGE_DYNAMIC;
@@ -482,34 +568,34 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 	// Initialize grid
 	Vertex* grid_buffer_data = new Vertex[4000];
 	for (int i = 0; i < 2000; i+=2) {
-		grid_buffer_data[i].position.x = -500;
-		grid_buffer_data[i].position.y = 0;
-		grid_buffer_data[i].position.z = -500 + i;
-		grid_buffer_data[i].normal.x = 0;
-		grid_buffer_data[i].normal.y = 1;
-		grid_buffer_data[i].normal.z = 0;
+		grid_buffer_data[i].position.x = -500.0f;
+		grid_buffer_data[i].position.y = 0.0f;
+		grid_buffer_data[i].position.z = -500.0f + i;
+		grid_buffer_data[i].normal.x = 0.0f;
+		grid_buffer_data[i].normal.y = 1.0f;
+		grid_buffer_data[i].normal.z = 0.0f;
 
-		grid_buffer_data[i+1].position.x = 500;
-		grid_buffer_data[i+1].position.y = 0;
-		grid_buffer_data[i+1].position.z = -500 + i;
-		grid_buffer_data[i+1].normal.x = 0;
-		grid_buffer_data[i+1].normal.y = 1;
-		grid_buffer_data[i+1].normal.z = 0;
+		grid_buffer_data[i+1].position.x = 500.0f;
+		grid_buffer_data[i+1].position.y = 0.0f;
+		grid_buffer_data[i+1].position.z = -500.0f + i;
+		grid_buffer_data[i+1].normal.x = 0.0f;
+		grid_buffer_data[i+1].normal.y = 1.0f;
+		grid_buffer_data[i+1].normal.z = 0.0f;
 	}
 	for (int i = 2000; i < 4000; i+=2) {
-		grid_buffer_data[i].position.x = -500 + i - 2000;
-		grid_buffer_data[i].position.y = 0;
-		grid_buffer_data[i].position.z = -500;
-		grid_buffer_data[i].normal.x = 0;
-		grid_buffer_data[i].normal.y = 1;
-		grid_buffer_data[i].normal.z = 0;
+		grid_buffer_data[i].position.x = -500.0f + i - 2000.0f;
+		grid_buffer_data[i].position.y = 0.0f;
+		grid_buffer_data[i].position.z = -500.0f;
+		grid_buffer_data[i].normal.x = 0.0f;
+		grid_buffer_data[i].normal.y = 1.0f;
+		grid_buffer_data[i].normal.z = 0.0f;
 
-		grid_buffer_data[i+1].position.x = -500 + i - 2000;
-		grid_buffer_data[i+1].position.y = 0;
-		grid_buffer_data[i+1].position.z = 500;
-		grid_buffer_data[i+1].normal.x = 0;
-		grid_buffer_data[i+1].normal.y = 1;
-		grid_buffer_data[i+1].normal.z = 0;
+		grid_buffer_data[i+1].position.x = -500.0f + i - 2000.0f;
+		grid_buffer_data[i+1].position.y = 0.0f;
+		grid_buffer_data[i+1].position.z = 500.0f;
+		grid_buffer_data[i+1].normal.x = 0.0f;
+		grid_buffer_data[i+1].normal.y = 1.0f;
+		grid_buffer_data[i+1].normal.z = 0.0f;
 	}
 	// Create grid vertex buffer
 	D3D11_BUFFER_DESC grid_buffer_desc;
@@ -521,12 +607,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 	grid_buffer_desc.StructureByteStride = sizeof(Vertex);
 	D3D11_SUBRESOURCE_DATA grid_subresource_data;
 	grid_subresource_data.pSysMem = grid_buffer_data;
-	// Create hardware vertex buffer
+	// Create hardware grid vertex buffer
 	ID3D11Buffer* grid_buffer = nullptr;
 	d3d_device->CreateBuffer(&grid_buffer_desc, &grid_subresource_data, &grid_buffer);
 
 	// Initialize initial camera position and orientation
-	//rotate_camera_orbital(-45, 45);
+	rotate_camera_orbital(30, 0);
+	rotate_camera_orbital(0, -45);
 
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
@@ -535,7 +622,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 	ImGui::StyleColorsDark();
 	ImGui_ImplWin32_Init(hwnd);
 	ImGui_ImplDX11_Init(d3d_device, d3d_context);
-	bool show_demo_window = true;
 
 	const FLOAT clear_color[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
 	// Event loop
@@ -562,14 +648,36 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 		d3d_context->Draw(4000, 0);
 
 		// Draw mesh if any has been read
-		if (vertex_buffer_data && vertex_indices_data) {
+		if (vertex_buffer_data && vertex_indices_data && vertex_normal_data) {
+			if (show_normals) {
+				// Set vertex buffer to the normals buffer
+				d3d_context->IASetVertexBuffers(0, 1, &vertex_normal_buffer, &stride, &offset);
+				// Set the shader to the normals shader
+				d3d_context->VSSetShader(vertex_normal_shader, nullptr, 0);
+				// Set primitive topology type to line list
+				d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+				//Draw normals
+				d3d_context->Draw(normal_count * 2, 0);
+			}
+
+			// Set wireframe or solid mode according to view options
+			if (show_wireframe) {
+				rasterizer_desc.FillMode = D3D11_FILL_WIREFRAME;
+			}
+			else {
+				rasterizer_desc.FillMode = D3D11_FILL_SOLID;
+			}
+			// Create rasterizer state with the new fill mode and set it
+			ID3D11RasterizerState* rasterizer_state;
+			d3d_device->CreateRasterizerState(&rasterizer_desc, &rasterizer_state);
+			d3d_context->RSSetState(rasterizer_state);
+
 			// Set vertex and index buffer of mesh
 			d3d_context->IASetVertexBuffers(0, 1, &vertex_buffer, &stride, &offset);
+			d3d_context->VSSetShader(vertex_shader, nullptr, 0);
 			d3d_context->IASetIndexBuffer(vertex_index_buffer, DXGI_FORMAT_R32_UINT, 0);
-
 			// Set primitive topology type to triangle list
 			d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			
 			//Draw mesh
 			d3d_context->DrawIndexed(indices_count, 0, 0);
 		}
@@ -589,14 +697,32 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 				}
 				ImGui::EndMenu();
 			}
+			if (ImGui::BeginMenu("View"))
+			{
+				ImGui::MenuItem("Wireframe", nullptr, &show_wireframe);
+				ImGui::MenuItem("View normals", nullptr, &show_normals);
+				ImGui::EndMenu();
+			}
 			ImGui::EndMainMenuBar();
 		}
 		if (igfd::ImGuiFileDialog::Instance()->FileDialog("open_dialog")) {
 			if (igfd::ImGuiFileDialog::Instance()->IsOk) {
 				std::string filename = igfd::ImGuiFileDialog::Instance()->GetFilepathName();
-				load_obj_file(filename);
+				if (load_thread.joinable()) load_thread.join();
+				load_thread = std::thread(load_obj_file, filename);
+				ImGui::OpenPopup("Loading...", 0);
 			}
 			igfd::ImGuiFileDialog::Instance()->CloseDialog("open_dialog");
+		}
+		if (show_loading_popup) {
+			ImGui::SetNextWindowSize(ImVec2(160, 50));
+			if (ImGui::BeginPopupModal("Loading...", nullptr, ImGuiWindowFlags_NoMove |
+															  ImGuiWindowFlags_NoResize |
+															  ImGuiWindowFlags_NoScrollbar |
+															  ImGuiWindowFlags_NoScrollWithMouse)) {
+				ImGui::LabelText("", "Loading mesh...");
+				ImGui::EndPopup();
+			}
 		}
 		ImGui::Render();
 		ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
@@ -606,6 +732,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 	}
 
 	// Cleanup
+	// Loading thread cleanup
+	if (load_thread.joinable()) load_thread.join();
 	// ImGui cleanup
 	ImGui_ImplDX11_Shutdown();
 	ImGui_ImplWin32_Shutdown();

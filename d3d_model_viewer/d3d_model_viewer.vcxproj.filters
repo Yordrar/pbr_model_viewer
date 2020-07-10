@@ -85,5 +85,8 @@
     <FxCompile Include="src\VertexShader.hlsl">
       <Filter>Archivos de origen</Filter>
     </FxCompile>
+    <FxCompile Include="src\normal_vs.hlsl">
+      <Filter>Archivos de origen</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>
