@@ -1,4 +1,5 @@
 #include <Windows.h>
+#include <Windowsx.h>
 
 #include <dxgi.h>
 #include <d3d11.h>
@@ -46,6 +47,8 @@ int vertices_count = 0;
 D3D11_BUFFER_DESC vertex_buffer_desc;
 D3D11_SUBRESOURCE_DATA vertex_subresource_data;
 ID3D11Buffer* vertex_buffer = nullptr;
+UINT stride = sizeof(Vertex);
+UINT offset = 0;
 
 // Vertex indices buffer, its buffer description and its subresource data
 UINT* vertex_indices_data = nullptr;
@@ -55,7 +58,76 @@ D3D11_SUBRESOURCE_DATA vertex_indices_subresource_data;
 ID3D11Buffer* vertex_index_buffer = nullptr;
 
 // Camera
-DirectX::XMVECTOR camera_position = DirectX::XMVectorSet(0, 0, 0, 1);
+DirectX::XMVECTOR camera_position = DirectX::XMVectorSet(0, 0, 2, 1);
+DirectX::XMVECTOR camera_lookat_vector = DirectX::XMVectorSet(0, 0, -1, 1);
+DirectX::XMVECTOR camera_right = DirectX::XMVectorSet(1, 0, 0, 1);
+float near_plane = 0.1f;
+float far_plane = 500.0f;
+void rotate_camera_orbital(float angles_x, float angles_y) {
+
+	// Create rotation quaternion for x axis
+	float angle_x_rad = DirectX::XMConvertToRadians(angles_x / 2.0f);
+	DirectX::XMFLOAT3 quaternion_x_imaginary(sinf(angle_x_rad) * camera_right.m128_f32[0], sinf(angle_x_rad) * camera_right.m128_f32[1], sinf(angle_x_rad) * camera_right.m128_f32[2]);
+	float quaternion_x_real = cosf(angle_x_rad);
+	DirectX::XMVECTOR quaternion_x = DirectX::XMVectorSet(quaternion_x_imaginary.x, quaternion_x_imaginary.y, quaternion_x_imaginary.z, quaternion_x_real);
+
+	// Create rotation quaternion for y axis
+	float angle_y_rad = DirectX::XMConvertToRadians(angles_y / 2.0f);
+	DirectX::XMFLOAT3 quaternion_y_imaginary(0, sinf(angle_y_rad), 0);
+	float quaternion_y_real = cosf(angle_y_rad);
+	DirectX::XMVECTOR quaternion_y = DirectX::XMVectorSet(quaternion_y_imaginary.x, quaternion_y_imaginary.y, quaternion_y_imaginary.z, quaternion_y_real);
+
+	// Combine quaternions
+	DirectX::XMVECTOR quaternion = (DirectX::XMQuaternionMultiply(quaternion_x, quaternion_y));
+
+	//Apply result quaternion to camera position and right vector
+	{
+		DirectX::XMVECTOR intermediate_result = DirectX::XMQuaternionMultiply(quaternion, DirectX::XMVectorSet(camera_position.m128_f32[0], camera_position.m128_f32[1], camera_position.m128_f32[2], 0));
+		intermediate_result = DirectX::XMQuaternionMultiply(intermediate_result, DirectX::XMQuaternionConjugate(quaternion));
+		camera_position.m128_f32[0] = intermediate_result.m128_f32[0];
+		camera_position.m128_f32[1] = intermediate_result.m128_f32[1];
+		camera_position.m128_f32[2] = intermediate_result.m128_f32[2];
+	}
+	{
+		DirectX::XMVECTOR intermediate_result = DirectX::XMQuaternionMultiply(quaternion_y, DirectX::XMVectorSet(camera_right.m128_f32[0], camera_right.m128_f32[1], camera_right.m128_f32[2], 0));
+		intermediate_result = DirectX::XMQuaternionMultiply(intermediate_result, DirectX::XMQuaternionConjugate(quaternion_y));
+		camera_right.m128_f32[0] = intermediate_result.m128_f32[0];
+		camera_right.m128_f32[1] = intermediate_result.m128_f32[1];
+		camera_right.m128_f32[2] = intermediate_result.m128_f32[2];
+	}
+
+	camera_lookat_vector = DirectX::XMVectorSubtract(DirectX::XMVectorSet(0, 0, 0, 2), camera_position);
+
+	// Create perspective transform and bind ti to the vertex shader
+	DirectX::XMMATRIX persp_transf;
+	persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera_position, camera_lookat_vector, DirectX::XMVectorSet(0, 1, 0, 0)) * DirectX::XMMatrixPerspectiveFovRH(DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height), near_plane, far_plane));
+	D3D11_BUFFER_DESC transform_desc;
+	transform_desc.ByteWidth = sizeof(DirectX::XMMATRIX);
+	transform_desc.Usage = D3D11_USAGE_DYNAMIC;
+	transform_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	transform_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	transform_desc.MiscFlags = 0;
+	transform_desc.StructureByteStride = 0;
+	D3D11_SUBRESOURCE_DATA transform_subres_data;
+	transform_subres_data.pSysMem = &persp_transf;
+	ID3D11Buffer* transform_buffer;
+	d3d_device->CreateBuffer(&transform_desc, &transform_subres_data, &transform_buffer);
+	d3d_context->VSSetConstantBuffers(0, 1, &transform_buffer);
+
+	// Create buffer with camera position
+	D3D11_BUFFER_DESC cam_pos_desc;
+	cam_pos_desc.ByteWidth = sizeof(DirectX::XMVECTOR);
+	cam_pos_desc.Usage = D3D11_USAGE_DYNAMIC;
+	cam_pos_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	cam_pos_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	cam_pos_desc.MiscFlags = 0;
+	cam_pos_desc.StructureByteStride = 0;
+	D3D11_SUBRESOURCE_DATA cam_pos_subres_data;
+	cam_pos_subres_data.pSysMem = &camera_position;
+	ID3D11Buffer* cam_pos_buffer;
+	d3d_device->CreateBuffer(&cam_pos_desc, &cam_pos_subres_data, &cam_pos_buffer);
+	d3d_context->VSSetConstantBuffers(1, 1, &cam_pos_buffer);
+}
 
 std::vector<std::string> split(std::string& str, char pattern) {
 	int pos_init = 0;
@@ -162,13 +234,10 @@ void load_obj_file(std::string filename) {
 	vertex_buffer_desc.CPUAccessFlags = 0;
 	vertex_buffer_desc.MiscFlags = 0;
 	vertex_buffer_desc.StructureByteStride = sizeof(Vertex);
-	UINT stride = sizeof(Vertex);
-	UINT offset = 0;
 	vertex_subresource_data.pSysMem = vertex_buffer_data;
 	// Create hardware vertex buffer and bind it to the input assembler
 	if (vertex_buffer) vertex_buffer->Release();
 	d3d_device->CreateBuffer(&vertex_buffer_desc, &vertex_subresource_data, &vertex_buffer);
-	d3d_context->IASetVertexBuffers(0, 1, &vertex_buffer, &stride, &offset);
 
 
 	// Create vertex indices buffer description
@@ -182,24 +251,21 @@ void load_obj_file(std::string filename) {
 	// Create hardware vertex index buffer and bind it to the input assembler
 	if (vertex_index_buffer) vertex_index_buffer->Release();
 	d3d_device->CreateBuffer(&vertex_indices_desc, &vertex_indices_subresource_data, &vertex_index_buffer);
-	d3d_context->IASetIndexBuffer(vertex_index_buffer, DXGI_FORMAT_R32_UINT, 0);
-
-	// Set primitive topology type to triangle list
-	d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }
 
 
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
+bool mouse_clicked = false;
+int previous_pos_x = -1;
+int previous_pos_y = -1;
 LRESULT CALLBACK WindowCallback(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	if(ImGui_ImplWin32_WndProcHandler(hwnd, message, wParam, lParam))
 		return true;
 
 	PAINTSTRUCT paintStruct;
 	HDC hDC;
-	switch (message)
-	{
+	switch (message) {
 	case WM_PAINT:
 		hDC = BeginPaint(hwnd, &paintStruct);
 		EndPaint(hwnd, &paintStruct);
@@ -207,6 +273,51 @@ LRESULT CALLBACK WindowCallback(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 	case WM_DESTROY:
 		PostQuitMessage(0);
 		break;
+	case WM_LBUTTONDOWN:
+		mouse_clicked = true;
+		previous_pos_x = GET_X_LPARAM(lParam);
+		previous_pos_y = GET_Y_LPARAM(lParam);
+		break;
+	case WM_LBUTTONUP:
+		mouse_clicked = false;
+		previous_pos_x = -1;
+		previous_pos_y = -1;
+		break;
+	case WM_MOUSEMOVE:
+		if (mouse_clicked) {
+			int pos_x = GET_X_LPARAM(lParam);
+			int pos_y = GET_Y_LPARAM(lParam);
+
+			rotate_camera_orbital((pos_y - previous_pos_y)/3.5f, (pos_x - previous_pos_x)/3.5f);
+
+			previous_pos_x = pos_x;
+			previous_pos_y = pos_y;
+		}
+		break;
+	case WM_MOUSEWHEEL:
+	{
+		int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+		camera_position.m128_f32[0] *= 1.0f - (delta / 500.0f);
+		camera_position.m128_f32[1] *= 1.0f - (delta / 500.0f);
+		camera_position.m128_f32[2] *= 1.0f - (delta / 500.0f);
+
+		// Create perspective transform and bind ti to the vertex shader
+		DirectX::XMMATRIX persp_transf;
+		persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera_position, camera_lookat_vector, DirectX::XMVectorSet(0, 1, 0, 0)) * DirectX::XMMatrixPerspectiveFovRH(DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height), near_plane, far_plane));
+		D3D11_BUFFER_DESC transform_desc;
+		transform_desc.ByteWidth = sizeof(DirectX::XMMATRIX);
+		transform_desc.Usage = D3D11_USAGE_DYNAMIC;
+		transform_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		transform_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		transform_desc.MiscFlags = 0;
+		transform_desc.StructureByteStride = 0;
+		D3D11_SUBRESOURCE_DATA transform_subres_data;
+		transform_subres_data.pSysMem = &persp_transf;
+		ID3D11Buffer* transform_buffer;
+		d3d_device->CreateBuffer(&transform_desc, &transform_subres_data, &transform_buffer);
+		d3d_context->VSSetConstantBuffers(0, 1, &transform_buffer);
+		break;
+	}
 	default:
 		return DefWindowProc(hwnd, message, wParam, lParam);
 	}
@@ -340,9 +451,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 
 	// Create perspective transform and bind ti to the vertex shader
 	DirectX::XMMATRIX persp_transf;
-	persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera_position,
-																		DirectX::XMVectorSet(0, 0, -1, 0),
-																		DirectX::XMVectorSet(0, 1, 0, 0)) * DirectX::XMMatrixPerspectiveFovRH(DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height), 0.1f, 100.0f));
+	persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera_position, camera_lookat_vector, DirectX::XMVectorSet(0, 1, 0, 0)) * DirectX::XMMatrixPerspectiveFovRH(DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height), near_plane, far_plane));
 	D3D11_BUFFER_DESC transform_desc;
 	transform_desc.ByteWidth = sizeof(DirectX::XMMATRIX);
 	transform_desc.Usage = D3D11_USAGE_DYNAMIC;
@@ -370,6 +479,55 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 	d3d_device->CreateBuffer(&cam_pos_desc, &cam_pos_subres_data, &cam_pos_buffer);
 	d3d_context->VSSetConstantBuffers(1, 1, &cam_pos_buffer);
 
+	// Initialize grid
+	Vertex* grid_buffer_data = new Vertex[4000];
+	for (int i = 0; i < 2000; i+=2) {
+		grid_buffer_data[i].position.x = -500;
+		grid_buffer_data[i].position.y = 0;
+		grid_buffer_data[i].position.z = -500 + i;
+		grid_buffer_data[i].normal.x = 0;
+		grid_buffer_data[i].normal.y = 1;
+		grid_buffer_data[i].normal.z = 0;
+
+		grid_buffer_data[i+1].position.x = 500;
+		grid_buffer_data[i+1].position.y = 0;
+		grid_buffer_data[i+1].position.z = -500 + i;
+		grid_buffer_data[i+1].normal.x = 0;
+		grid_buffer_data[i+1].normal.y = 1;
+		grid_buffer_data[i+1].normal.z = 0;
+	}
+	for (int i = 2000; i < 4000; i+=2) {
+		grid_buffer_data[i].position.x = -500 + i - 2000;
+		grid_buffer_data[i].position.y = 0;
+		grid_buffer_data[i].position.z = -500;
+		grid_buffer_data[i].normal.x = 0;
+		grid_buffer_data[i].normal.y = 1;
+		grid_buffer_data[i].normal.z = 0;
+
+		grid_buffer_data[i+1].position.x = -500 + i - 2000;
+		grid_buffer_data[i+1].position.y = 0;
+		grid_buffer_data[i+1].position.z = 500;
+		grid_buffer_data[i+1].normal.x = 0;
+		grid_buffer_data[i+1].normal.y = 1;
+		grid_buffer_data[i+1].normal.z = 0;
+	}
+	// Create grid vertex buffer
+	D3D11_BUFFER_DESC grid_buffer_desc;
+	grid_buffer_desc.ByteWidth = 4000 * sizeof(Vertex);
+	grid_buffer_desc.Usage = D3D11_USAGE_IMMUTABLE;
+	grid_buffer_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	grid_buffer_desc.CPUAccessFlags = 0;
+	grid_buffer_desc.MiscFlags = 0;
+	grid_buffer_desc.StructureByteStride = sizeof(Vertex);
+	D3D11_SUBRESOURCE_DATA grid_subresource_data;
+	grid_subresource_data.pSysMem = grid_buffer_data;
+	// Create hardware vertex buffer
+	ID3D11Buffer* grid_buffer = nullptr;
+	d3d_device->CreateBuffer(&grid_buffer_desc, &grid_subresource_data, &grid_buffer);
+
+	// Initialize initial camera position and orientation
+	//rotate_camera_orbital(-45, 45);
+
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -394,9 +552,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 		d3d_context->ClearRenderTargetView(render_target_view, clear_color);
 		// Clear depth buffer
 		d3d_context->ClearDepthStencilView(depth_stencil_view, D3D11_CLEAR_DEPTH|D3D11_CLEAR_STENCIL, 1.0f, 0);
-		// Draw triangles from index buffer previously bound
-		if(vertex_buffer_data && vertex_indices_data)
+
+		// Draw grid in xz plane
+		// Set vertex and index buffer of grid
+		d3d_context->IASetVertexBuffers(0, 1, &grid_buffer, &stride, &offset);
+		// Set primitive topology type to line list
+		d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+		//Draw mesh
+		d3d_context->Draw(4000, 0);
+
+		// Draw mesh if any has been read
+		if (vertex_buffer_data && vertex_indices_data) {
+			// Set vertex and index buffer of mesh
+			d3d_context->IASetVertexBuffers(0, 1, &vertex_buffer, &stride, &offset);
+			d3d_context->IASetIndexBuffer(vertex_index_buffer, DXGI_FORMAT_R32_UINT, 0);
+
+			// Set primitive topology type to triangle list
+			d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			
+			//Draw mesh
 			d3d_context->DrawIndexed(indices_count, 0, 0);
+		}
 
 		// Start the Dear ImGui frame
 		ImGui_ImplDX11_NewFrame();

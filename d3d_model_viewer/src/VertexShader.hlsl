@@ -11,5 +11,5 @@ void main(float3 pos : POSITION, float4 col : COLOR, float3 normal : NORMAL,
 
 	out_pos = mul(float4(pos, 1.0f), projection);
 
-	out_col = -dot(pos - cam_pos, normal) * float4(0.5f, 0.5f, 0.5f, 1.0f);
+	out_col = -dot(normalize(pos - cam_pos), normal) * float4(0.5f, 0.5f, 0.5f, 1.0f);
 }
