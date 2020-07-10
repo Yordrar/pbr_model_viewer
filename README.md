@@ -13,8 +13,6 @@ Usage is simple, run the program and go the 'File' menu in the top menu bar and 
 
 These are some example models viewed with this software. Keep in mind the shader used is intentionally ugly for debugging purposes, there will be more visualization options once I finish it.
 
-![diamond](/d3d_model_viewer/images/diamond.PNG)
+![diamond](/images/diamond.PNG)
 
-![cube](/d3d_model_viewer/images/cube.PNG)
-
-![file_chooser](/d3d_model_viewer/images/file_chooser.PNG)
+![file_chooser](/images/file_chooser.PNG)

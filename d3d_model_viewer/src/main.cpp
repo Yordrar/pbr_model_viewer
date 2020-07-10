@@ -29,6 +29,7 @@ namespace Colors {
 typedef struct Vertex {
 	DirectX::XMFLOAT3 position;
 	DirectX::XMFLOAT4 color;
+	DirectX::XMFLOAT3 normal;
 } Vertex;
 
 // Window parameters
@@ -53,6 +54,9 @@ D3D11_BUFFER_DESC vertex_indices_desc;
 D3D11_SUBRESOURCE_DATA vertex_indices_subresource_data;
 ID3D11Buffer* vertex_index_buffer = nullptr;
 
+// Camera
+DirectX::XMVECTOR camera_position = DirectX::XMVectorSet(0, 0, 0, 1);
+
 std::vector<std::string> split(std::string& str, char pattern) {
 	int pos_init = 0;
 	int pos_found = 0;
@@ -71,6 +75,7 @@ std::vector<std::string> split(std::string& str, char pattern) {
 void load_obj_file(std::string filename) {
 	std::vector<Vertex> parsed_vertices;
 	std::vector<UINT> parsed_indices;
+	std::vector<DirectX::XMFLOAT3> parsed_normals;
 
 	std::ifstream file(filename, std::ifstream::in);
 	std::string line;
@@ -112,13 +117,30 @@ void load_obj_file(std::string filename) {
 			parsed_vertices.push_back(v);
 		}
 		else if (line.find("f ", 0) == 0) {
+			// Read vertex indices
 			std::vector<std::string> face_str = split(line, ' ');
-			UINT face_vertex1 = std::stoi(split(face_str[1], '/')[0]);
-			UINT face_vertex2 = std::stoi(split(face_str[2], '/')[0]);
-			UINT face_vertex3 = std::stoi(split(face_str[3], '/')[0]);
-			parsed_indices.push_back(face_vertex1-1);
-			parsed_indices.push_back(face_vertex2-1);
-			parsed_indices.push_back(face_vertex3-1);
+			UINT face_vertex1 = std::stoi(split(face_str[1], '/')[0])-1;
+			UINT face_vertex2 = std::stoi(split(face_str[2], '/')[0])-1;
+			UINT face_vertex3 = std::stoi(split(face_str[3], '/')[0])-1;
+			parsed_indices.push_back(face_vertex1);
+			parsed_indices.push_back(face_vertex2);
+			parsed_indices.push_back(face_vertex3);
+
+			// Read normal indices and assign normals
+			float normal1 = std::stoi(split(face_str[1], '/')[2])-1;
+			float normal2 = std::stoi(split(face_str[2], '/')[2])-1;
+			float normal3 = std::stoi(split(face_str[3], '/')[2])-1;
+			parsed_vertices[face_vertex1].normal = parsed_normals[normal1];
+			parsed_vertices[face_vertex2].normal = parsed_normals[normal2];
+			parsed_vertices[face_vertex3].normal = parsed_normals[normal3];
+		}
+		else if (line.find("vn ", 0) == 0) {
+			std::vector<std::string> normals_str = split(line, ' ');
+			DirectX::XMFLOAT3 n;
+			n.x = std::stof(normals_str[1]);
+			n.y = std::stof(normals_str[2]);
+			n.z = std::stof(normals_str[3]);
+			parsed_normals.push_back(n);
 		}
 	}
 	// Destroy old vertex buffer if existed and create new with parsed vertices
@@ -294,13 +316,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 	// Create vertex format description
 	D3D11_INPUT_ELEMENT_DESC vertex_desc_buffer[] = {
 		{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-		{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0}
+		{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0}
 	};
 	// Create and bind vertex input layout and read vertex shader
 	ID3D11InputLayout* input_layout;
 	ID3DBlob* vertex_shader_blob;
 	D3DReadFileToBlob(L"VertexShader.cso", &vertex_shader_blob);
-	d3d_device->CreateInputLayout(vertex_desc_buffer, 2, vertex_shader_blob->GetBufferPointer(), vertex_shader_blob->GetBufferSize(), &input_layout);
+	d3d_device->CreateInputLayout(vertex_desc_buffer, sizeof(vertex_desc_buffer)/sizeof(D3D11_INPUT_ELEMENT_DESC), vertex_shader_blob->GetBufferPointer(), vertex_shader_blob->GetBufferSize(), &input_layout);
 	d3d_context->IASetInputLayout(input_layout);
 
 	// Create and set vertex shader
@@ -317,9 +340,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 
 	// Create perspective transform and bind ti to the vertex shader
 	DirectX::XMMATRIX persp_transf;
-	persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtLH(DirectX::XMVectorSet(0, 0, 0, 1),
-																		DirectX::XMVectorSet(0, 0, 1, 0),
-																		DirectX::XMVectorSet(0, 1, 0, 0)) * DirectX::XMMatrixPerspectiveFovLH(DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height), 0.1f, 100.0f));
+	persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera_position,
+																		DirectX::XMVectorSet(0, 0, -1, 0),
+																		DirectX::XMVectorSet(0, 1, 0, 0)) * DirectX::XMMatrixPerspectiveFovRH(DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height), 0.1f, 100.0f));
 	D3D11_BUFFER_DESC transform_desc;
 	transform_desc.ByteWidth = sizeof(DirectX::XMMATRIX);
 	transform_desc.Usage = D3D11_USAGE_DYNAMIC;
@@ -332,6 +355,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 	ID3D11Buffer* transform_buffer;
 	d3d_device->CreateBuffer(&transform_desc, &transform_subres_data, &transform_buffer);
 	d3d_context->VSSetConstantBuffers(0, 1, &transform_buffer);
+
+	// Create buffer with camera position
+	D3D11_BUFFER_DESC cam_pos_desc;
+	cam_pos_desc.ByteWidth = sizeof(DirectX::XMVECTOR);
+	cam_pos_desc.Usage = D3D11_USAGE_DYNAMIC;
+	cam_pos_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	cam_pos_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	cam_pos_desc.MiscFlags = 0;
+	cam_pos_desc.StructureByteStride = 0;
+	D3D11_SUBRESOURCE_DATA cam_pos_subres_data;
+	cam_pos_subres_data.pSysMem = &camera_position;
+	ID3D11Buffer* cam_pos_buffer;
+	d3d_device->CreateBuffer(&cam_pos_desc, &cam_pos_subres_data, &cam_pos_buffer);
+	d3d_context->VSSetConstantBuffers(1, 1, &cam_pos_buffer);
 
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
