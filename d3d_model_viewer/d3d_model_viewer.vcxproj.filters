@@ -51,6 +51,9 @@
     <ClCompile Include="src\Grid.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
+    <ClCompile Include="src\Cubemap.cpp">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="src\shader\mesh_vs.hlsl">
@@ -59,7 +62,13 @@
     <FxCompile Include="src\shader\normal_vs.hlsl">
       <Filter>Archivos de origen</Filter>
     </FxCompile>
-    <FxCompile Include="src\shader\PixelShader.hlsl">
+    <FxCompile Include="src\shader\common_ps.hlsl">
+      <Filter>Archivos de origen</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shader\cubemap_ps.hlsl">
+      <Filter>Archivos de origen</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shader\cubemap_vs.hlsl">
       <Filter>Archivos de origen</Filter>
     </FxCompile>
   </ItemGroup>
@@ -107,6 +116,12 @@
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
     <ClInclude Include="src\Vertex.h">
+      <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Cubemap.h">
+      <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
+    <ClInclude Include="src\stb_image.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
   </ItemGroup>

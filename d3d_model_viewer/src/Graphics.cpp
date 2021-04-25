@@ -98,8 +98,11 @@ Graphics::Graphics(HWND hwnd, int screen_width, int screen_height)
 	vertex_normal_shader = create_vertex_shader("normal_vs.cso");
 
 	// Create and set pixel shader
-	pixel_shader = create_pixel_shader("PixelShader.cso");
+	pixel_shader = create_pixel_shader("common_ps.cso");
 	set_pixel_shader(pixel_shader);
+
+	cubemap_vertex_shader = create_vertex_shader("cubemap_vs.cso");
+	cubemap_pixel_shader = create_pixel_shader("cubemap_ps.cso");
 }
 
 void Graphics::create(HWND hwnd, int screen_width, int screen_height)
@@ -200,7 +203,7 @@ ID3D11PixelShader* Graphics::create_pixel_shader(std::string filename)
 
 void Graphics::set_pixel_shader(ID3D11PixelShader* shader)
 {
-	d3d_context->PSSetShader(pixel_shader, nullptr, 0);
+	d3d_context->PSSetShader(shader, nullptr, 0);
 }
 
 ID3D11Buffer* Graphics::create_buffer(const void* data, UINT byte_width, D3D11_BIND_FLAG bind_flag)
@@ -230,7 +233,6 @@ void Graphics::update_buffer(ID3D11Buffer* buffer, const void* data, UINT size)
 	memcpy(mappedResource.pData, data, size);
 	//  Reenable GPU access to the vertex buffer data.
 	d3d_context->Unmap(buffer, 0);
-	d3d_context->UpdateSubresource(buffer, 0, nullptr, data, 0, 0);
 }
 
 void Graphics::set_buffer(int pos, ID3D11Buffer* buffer)

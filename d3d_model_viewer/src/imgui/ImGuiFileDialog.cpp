@@ -47,6 +47,15 @@ SOFTWARE.
 #include <sys/types.h>
 #include <dirent.h>
 #define PATH_SEP '/'
+#elif defined(_WIN64)
+#define stat _stat
+#define stricmp _stricmp
+#include <cctype>
+#include <dirent.h>
+#define PATH_SEP '\\'
+#ifndef PATH_MAX
+#define PATH_MAX 260
+#endif
 #endif
 
 #include "imgui.h"
@@ -968,7 +977,7 @@ namespace igfd
 	#endif
 #endif
 				size_t countRows = m_FilteredFileList.size();
-                ImGuiListClipper clipper(countRows, ImGui::GetTextLineHeightWithSpacing());
+                ImGuiListClipper clipper(static_cast<int>(countRows), ImGui::GetTextLineHeightWithSpacing());
 				for(int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
                 {
                     const FileInfoStruct& infos = m_FilteredFileList[i];

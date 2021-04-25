@@ -17,10 +17,36 @@
 #include "imgui/imgui_impl_win32.h"
 #include "imgui/imgui_impl_dx11.h"
 
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
 #include "Graphics.h"
 #include "Camera.h"
 #include "Vertex.h"
 #include "Grid.h"
+#include "Cubemap.h"
+#include "stb_image.h"
+
+
+DirectX::XMFLOAT2 operator-(DirectX::XMFLOAT2 a, DirectX::XMFLOAT2 b)
+{
+	DirectX::XMFLOAT2 result;
+	result.x = a.x - b.x;
+	result.y = a.y - b.y;
+
+	return result;
+}
+
+DirectX::XMFLOAT3 operator-(DirectX::XMFLOAT3 a, DirectX::XMFLOAT3 b)
+{
+	DirectX::XMFLOAT3 result;
+	result.x = a.x - b.x;
+	result.y = a.y - b.y;
+	result.z = a.z - b.z;
+
+	return result;
+}
 
 namespace Colors {
 	XMGLOBALCONST DirectX::XMFLOAT4 White = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -60,6 +86,22 @@ D3D11_BUFFER_DESC vertex_normal_desc;
 D3D11_SUBRESOURCE_DATA vertex_normal_subresource_data;
 ID3D11Buffer* vertex_normal_buffer = nullptr;
 
+// PBR stuff
+D3D11_TEXTURE2D_DESC pbr_texture_desc = {};
+ID3D11SamplerState* texture_sampler_state = nullptr;
+unsigned char* albedo_map = nullptr;
+ID3D11Texture2D* albedo_texture;
+ID3D11ShaderResourceView* albedo_srv;
+unsigned char* normal_map = nullptr;
+ID3D11Texture2D* normal_texture;
+ID3D11ShaderResourceView* normal_srv;
+unsigned char* metallic_map = nullptr;
+ID3D11Texture2D* metallic_texture;
+ID3D11ShaderResourceView* metallic_srv;
+unsigned char* roughness_map = nullptr;
+ID3D11Texture2D* roughness_texture;
+ID3D11ShaderResourceView* roughness_srv;
+
 // View options
 bool show_wireframe = false;
 bool show_normals = false;
@@ -98,6 +140,7 @@ void load_obj_file(std::string filename) {
 	std::vector<Vertex> parsed_vertices;
 	std::vector<UINT> parsed_indices;
 	std::vector<DirectX::XMFLOAT3> parsed_normals;
+	std::vector<DirectX::XMFLOAT2> parsed_uvs;
 
 	std::ifstream file(filename, std::ifstream::in);
 	std::string line;
@@ -148,6 +191,14 @@ void load_obj_file(std::string filename) {
 			parsed_indices.push_back(face_vertex2);
 			parsed_indices.push_back(face_vertex3);
 
+			// Read uv indices
+			int uv1 = std::stoi(split(face_str[1], '/')[1]) - 1;
+			int uv2 = std::stoi(split(face_str[2], '/')[1]) - 1;
+			int uv3 = std::stoi(split(face_str[3], '/')[1]) - 1;
+			parsed_vertices[face_vertex1].uvs = parsed_uvs[uv1];
+			parsed_vertices[face_vertex2].uvs = parsed_uvs[uv2];
+			parsed_vertices[face_vertex3].uvs = parsed_uvs[uv3];
+
 			// Read normal indices and assign normals
 			int normal1 = std::stoi(split(face_str[1], '/')[2])-1;
 			int normal2 = std::stoi(split(face_str[2], '/')[2])-1;
@@ -155,6 +206,23 @@ void load_obj_file(std::string filename) {
 			parsed_vertices[face_vertex1].normal = parsed_normals[normal1];
 			parsed_vertices[face_vertex2].normal = parsed_normals[normal2];
 			parsed_vertices[face_vertex3].normal = parsed_normals[normal3];
+
+			// Calculate tangent
+			DirectX::XMFLOAT3 edge1 = parsed_vertices[face_vertex2].position - parsed_vertices[face_vertex1].position;
+			DirectX::XMFLOAT3 edge2 = parsed_vertices[face_vertex3].position - parsed_vertices[face_vertex1].position;
+			DirectX::XMFLOAT2 deltaUV1 = parsed_uvs[uv2] - parsed_uvs[uv1];
+			DirectX::XMFLOAT2 deltaUV2 = parsed_uvs[uv3] - parsed_uvs[uv1];
+
+			float f = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+
+			DirectX::XMFLOAT3 tangent;
+			tangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+			tangent.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+			tangent.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+
+			parsed_vertices[face_vertex1].tangent = tangent;
+			parsed_vertices[face_vertex2].tangent = tangent;
+			parsed_vertices[face_vertex3].tangent = tangent;
 		}
 		else if (line.find("vn ", 0) == 0) {
 			std::vector<std::string> normals_str = split(line, ' ');
@@ -163,6 +231,13 @@ void load_obj_file(std::string filename) {
 			n.y = std::stof(normals_str[2]);
 			n.z = std::stof(normals_str[3]);
 			parsed_normals.push_back(n);
+		}
+		else if (line.find("vt ", 0) == 0) {
+			std::vector<std::string> uvs_str = split(line, ' ');
+			DirectX::XMFLOAT2 n;
+			n.x = std::stof(uvs_str[1]);
+			n.y = std::stof(uvs_str[2]);
+			parsed_uvs.push_back(n);
 		}
 	}
 	// Destroy old vertex buffer if existed and create new with parsed vertices
@@ -229,6 +304,87 @@ void load_obj_file(std::string filename) {
 	if (vertex_normal_buffer) vertex_normal_buffer->Release();
 	Graphics::get()->d3d_device->CreateBuffer(&vertex_normal_desc, &vertex_normal_subresource_data, &vertex_normal_buffer);
 
+	int width, height, nrChannels;
+	albedo_map = stbi_load("./albedo.tga", &width, &height, &nrChannels, 4);
+	normal_map = stbi_load("./normal.tga", &width, &height, &nrChannels, 4);
+	metallic_map = stbi_load("./metallic.tga", &width, &height, &nrChannels, 4);
+	roughness_map = stbi_load("./roughness.tga", &width, &height, &nrChannels, 4);
+
+	pbr_texture_desc.Width = width;
+	pbr_texture_desc.Height = height;
+	pbr_texture_desc.MipLevels = 1;
+	pbr_texture_desc.ArraySize = 1;
+	pbr_texture_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	pbr_texture_desc.SampleDesc = { 1, 0 };
+	pbr_texture_desc.Usage = D3D11_USAGE_DEFAULT;
+	pbr_texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+	pbr_texture_desc.CPUAccessFlags = 0;
+	pbr_texture_desc.MiscFlags = 0;
+
+	D3D11_SAMPLER_DESC texture_sampler_desc = {};
+	texture_sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	texture_sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+	texture_sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+	texture_sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+	texture_sampler_desc.MipLODBias = 0.0f;
+	texture_sampler_desc.MaxAnisotropy = 1;
+	texture_sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+	texture_sampler_desc.MinLOD = -FLT_MAX;
+	texture_sampler_desc.MaxLOD = FLT_MAX;
+	Graphics::get()->d3d_device->CreateSamplerState(&texture_sampler_desc, &texture_sampler_state);
+
+	{
+		D3D11_SUBRESOURCE_DATA subres_data;
+		subres_data.pSysMem = albedo_map;
+		subres_data.SysMemPitch = width * 4;
+		subres_data.SysMemSlicePitch = 0;
+		Graphics::get()->d3d_device->CreateTexture2D(&pbr_texture_desc, &subres_data, &albedo_texture);
+		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = pbr_texture_desc.Format;
+		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D = { 0, 1 };
+		Graphics::get()->d3d_device->CreateShaderResourceView(albedo_texture, &srvDesc, &albedo_srv);
+	}
+
+	{
+		D3D11_SUBRESOURCE_DATA subres_data;
+		subres_data.pSysMem = normal_map;
+		subres_data.SysMemPitch = width * 4;
+		subres_data.SysMemSlicePitch = 0;
+		Graphics::get()->d3d_device->CreateTexture2D(&pbr_texture_desc, &subres_data, &normal_texture);
+		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = pbr_texture_desc.Format;
+		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D = { 0, 1 };
+		Graphics::get()->d3d_device->CreateShaderResourceView(normal_texture, &srvDesc, &normal_srv);
+	}
+
+	{
+		D3D11_SUBRESOURCE_DATA subres_data;
+		subres_data.pSysMem = metallic_map;
+		subres_data.SysMemPitch = width * 4;
+		subres_data.SysMemSlicePitch = 0;
+		Graphics::get()->d3d_device->CreateTexture2D(&pbr_texture_desc, &subres_data, &metallic_texture);
+		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = pbr_texture_desc.Format;
+		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D = { 0, 1 };
+		Graphics::get()->d3d_device->CreateShaderResourceView(metallic_texture, &srvDesc, &metallic_srv);
+	}
+
+	{
+		D3D11_SUBRESOURCE_DATA subres_data;
+		subres_data.pSysMem = roughness_map;
+		subres_data.SysMemPitch = width * 4;
+		subres_data.SysMemSlicePitch = 0;
+		Graphics::get()->d3d_device->CreateTexture2D(&pbr_texture_desc, &subres_data, &roughness_texture);
+		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = pbr_texture_desc.Format;
+		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D = { 0, 1 };
+		Graphics::get()->d3d_device->CreateShaderResourceView(roughness_texture, &srvDesc, &roughness_srv);
+	}
+
 	show_loading_popup = false;
 	ImGui::CloseCurrentPopup();
 }
@@ -282,6 +438,7 @@ LRESULT CALLBACK WindowCallback(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 		cam->position.m128_f32[1] *= 1.0f - (delta / 500.0f);
 		cam->position.m128_f32[2] *= 1.0f - (delta / 500.0f);
 
+		cam->move(0.0f, 0.0f, 0.0f);
 		cam->update_camera_shader_buffers();
 		break;
 	}
@@ -321,7 +478,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 	cam = new Camera(camera_position, camera_lookat_vector, camera_right, camera_up, DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height));
 
 	// Create grid
-	Grid grid;
+	//Grid grid;
+
+	// Create cubemap
+	Cubemap cubemap("./cubemap_1k/");
 
 	// Initialize initial camera position and orientation
 	cam->rotate(30, 0);
@@ -346,17 +506,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 
 		Graphics::get()->clear(clear_color);
 
-		grid.draw();
+		//grid.draw();
+		//cubemap.draw();
 
 		// Draw mesh if any has been read
-		if (vertex_buffer_data && vertex_indices_data && vertex_normal_data) {
+		if (!show_loading_popup && vertex_buffer_data && vertex_indices_data && vertex_normal_data) {
 			if (show_normals) {
 				// Set vertex buffer to the normals buffer
 				Graphics::get()->d3d_context->IASetVertexBuffers(0, 1, &vertex_normal_buffer, &stride, &offset);
-				// Set the shader to the normals shader
-				Graphics::get()->d3d_context->VSSetShader(Graphics::get()->vertex_normal_shader, nullptr, 0);
 				// Set primitive topology type to line list
 				Graphics::get()->d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+				// Set the shader to the normals shader
+				Graphics::get()->set_vertex_shader(Graphics::get()->vertex_normal_shader);
+				Graphics::get()->set_pixel_shader(Graphics::get()->pixel_shader);
 				//Draw normals
 				Graphics::get()->d3d_context->Draw(normal_count * 2, 0);
 			}
@@ -369,9 +531,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 				Graphics::get()->change_fill_mode(D3D11_FILL_SOLID);
 			}
 
+			Graphics::get()->set_vertex_shader(Graphics::get()->vertex_shader);
+			Graphics::get()->set_pixel_shader(Graphics::get()->pixel_shader);
+			Graphics::get()->d3d_context->PSSetSamplers(1, 1, &texture_sampler_state);
+			Graphics::get()->d3d_context->PSSetShaderResources(1, 1, &albedo_srv);
+			Graphics::get()->d3d_context->PSSetShaderResources(2, 1, &normal_srv);
+			Graphics::get()->d3d_context->PSSetShaderResources(3, 1, &metallic_srv);
+			Graphics::get()->d3d_context->PSSetShaderResources(4, 1, &roughness_srv);
 			// Set vertex and index buffer of mesh
 			Graphics::get()->d3d_context->IASetVertexBuffers(0, 1, &vertex_buffer, &stride, &offset);
-			Graphics::get()->d3d_context->VSSetShader(Graphics::get()->vertex_shader, nullptr, 0);
 			Graphics::get()->d3d_context->IASetIndexBuffer(vertex_index_buffer, DXGI_FORMAT_R32_UINT, 0);
 			// Set primitive topology type to triangle list
 			Graphics::get()->d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
