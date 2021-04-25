@@ -8,4 +8,5 @@ typedef struct Vertex {
 	DirectX::XMFLOAT3 normal;
 	DirectX::XMFLOAT2 uvs;
 	DirectX::XMFLOAT3 tangent;
+	DirectX::XMFLOAT3 bitangent;
 } Vertex;

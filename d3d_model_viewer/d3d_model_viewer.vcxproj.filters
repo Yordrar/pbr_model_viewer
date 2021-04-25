@@ -59,9 +59,6 @@
     <FxCompile Include="src\shader\mesh_vs.hlsl">
       <Filter>Archivos de origen</Filter>
     </FxCompile>
-    <FxCompile Include="src\shader\normal_vs.hlsl">
-      <Filter>Archivos de origen</Filter>
-    </FxCompile>
     <FxCompile Include="src\shader\common_ps.hlsl">
       <Filter>Archivos de origen</Filter>
     </FxCompile>

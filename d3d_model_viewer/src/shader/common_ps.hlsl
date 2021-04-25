@@ -37,24 +37,24 @@ float3 fresnelSchlick(float cosTheta, float3 F0)
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 
-float4 main(float4 pos : SV_POSITION, float3 cam_pos : POSITION0, float3 world_pos : POSITION1, float3 normal : NORMAL0, float2 uvs : TEXCOORDS, float3 tangent : TANGENT) : SV_Target
+float4 main(float4 pos : SV_POSITION, float3 cam_pos : POSITION0, float3 world_pos : POSITION1, float3 normal : NORMAL0, float2 uvs : TEXCOORDS, float3 tangent : TANGENT, float3 bitangent : BITANGENT) : SV_Target
 {
     float2 UV = float2(uvs.x, 1.0 - uvs.y);
     float3 albedo = albedo_tex.Sample(tex_sampler, UV).rgb;
-    //albedo = pow(albedo, 2);
+    albedo = pow(albedo, 2);
     float metallic = metallic_tex.Sample(tex_sampler, UV).r;
     float roughness = roughness_tex.Sample(tex_sampler, UV).r;
     
     float3 lightColor = float3(1.0, 1.0, 1.0);
-    float3 L = normalize(float3(1.0, 1.0, 1.0));
+    float3 L = normalize(float3(-1.0, 1.0, 1.0));
     float3 V = normalize(cam_pos - world_pos);
     float3 H = normalize(L + V);
     float3 T = normalize(tangent);
+    float3 B = normalize(bitangent);
     float3 N = normalize(normal);
-    float3 sampled_N = normalize(normal_tex.Sample(tex_sampler, UV).xyz);
-    sampled_N = normalize(N * 2.0 - 1.0);
-    float3 B = normalize(cross(N, T));
     float3x3 TBN = float3x3(T, B, N);
+    float3 sampled_N = normal_tex.Sample(tex_sampler, UV).xyz;
+    sampled_N = normalize(N * 2.0 - 1.0);
     N = normalize(mul(TBN, sampled_N));
     
     float NdotL = max(dot(N, L), 0.0);
