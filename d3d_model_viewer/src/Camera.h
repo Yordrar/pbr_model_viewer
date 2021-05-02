@@ -6,10 +6,13 @@
 #include <directxmath.h>
 #include <directxcolors.h>
 
+#include <bindable/ConstantBuffer.h>
+#include <Graphics.h>
+
 class Camera
 {
 public:
-	Camera(DirectX::XMVECTOR position, DirectX::XMVECTOR lookat, DirectX::XMVECTOR right, DirectX::XMVECTOR up, float fov, float aspect_ratio);
+	Camera(Graphics& gfx, DirectX::XMVECTOR position, DirectX::XMVECTOR lookat, DirectX::XMVECTOR right, DirectX::XMVECTOR up, float fov, float aspect_ratio);
 	~Camera();
 
 	void move(float delta_x, float delta_y, float delta_z);
@@ -17,10 +20,13 @@ public:
 
 	void update_camera_shader_buffers();
 
-	DirectX::XMMATRIX persp_transf;
-	ID3D11Buffer* persp_transf_buffer;
+	Graphics& m_graphics;
+
+	DirectX::XMMATRIX m_viewProjMatrix;
+	ConstantBuffer* m_viewProjBuffer;
 	DirectX::XMVECTOR position;
-	ID3D11Buffer* position_buffer;
+	ConstantBuffer* m_positionBuffer;
+
 	DirectX::XMVECTOR right;
 	DirectX::XMVECTOR up;
 	DirectX::XMVECTOR lookat;

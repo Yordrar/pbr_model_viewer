@@ -9,8 +9,6 @@
 #include <directxmath.h>
 #include <directxcolors.h>
 
-#include "Vertex.h"
-
 class Grid
 {
 public:
@@ -18,8 +16,5 @@ public:
 	~Grid();
 
 	void draw();
-
-	Vertex* data = nullptr;
-	ID3D11Buffer* data_buffer;
 };
 

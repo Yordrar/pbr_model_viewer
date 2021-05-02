@@ -1,10 +1,10 @@
 static const float PI = 3.14159265359;
 
-SamplerState tex_sampler : register(s1);
-Texture2D albedo_tex : register(t1);
-Texture2D normal_tex : register(t2);
-Texture2D metallic_tex : register(t3);
-Texture2D roughness_tex : register(t4);
+SamplerState tex_sampler : register(s0);
+Texture2D albedo_tex : register(t0);
+Texture2D normal_tex : register(t1);
+Texture2D metallic_tex : register(t2);
+Texture2D roughness_tex : register(t3);
 
 float ggx(float3 N, float3 H, float roughness)
 {

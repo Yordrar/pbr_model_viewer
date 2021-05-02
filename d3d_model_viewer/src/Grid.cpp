@@ -4,6 +4,7 @@
 
 Grid::Grid()
 {
+	/*
 	// Initialize grid
 	data = new Vertex[4000];
 	for (int i = 0; i < 2000; i += 2) {
@@ -37,16 +38,20 @@ Grid::Grid()
 		data[i + 1].normal.z = 0.0f;
 	}
 	data_buffer = Graphics::get()->create_buffer(data, 4000 * sizeof(Vertex), D3D11_BIND_VERTEX_BUFFER);
+	*/
 }
 
 Grid::~Grid()
 {
+	/*
 	delete data;
 	data_buffer->Release();
+	*/
 }
 
 void Grid::draw()
 {
+	/*
 	UINT stride = sizeof(Vertex);
 	UINT offset = 0;
 	// Draw grid in xz plane
@@ -56,4 +61,5 @@ void Grid::draw()
 	Graphics::get()->d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
 	//Draw grid
 	Graphics::get()->d3d_context->Draw(4000, 0);
+	*/
 }

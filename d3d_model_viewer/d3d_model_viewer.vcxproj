@@ -11,7 +11,16 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\bindable\ConstantBuffer.cpp" />
+    <ClCompile Include="src\bindable\IndexBuffer.cpp" />
+    <ClCompile Include="src\bindable\InputLayout.cpp" />
+    <ClCompile Include="src\bindable\PixelShader.cpp" />
+    <ClCompile Include="src\bindable\Texture.cpp" />
+    <ClCompile Include="src\bindable\TextureSampler.cpp" />
+    <ClCompile Include="src\bindable\VertexBuffer.cpp" />
+    <ClCompile Include="src\bindable\VertexShader.cpp" />
     <ClCompile Include="src\Cubemap.cpp" />
+    <ClCompile Include="src\drawable\IDrawable.cpp" />
     <ClCompile Include="src\Grid.cpp" />
     <ClCompile Include="src\Camera.cpp" />
     <ClCompile Include="src\Graphics.cpp" />
@@ -24,6 +33,7 @@
     <ClCompile Include="src\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="src\imgui\imgui_widgets.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\bindable\TextureCube.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="src\shader\cubemap_ps.hlsl">
@@ -44,7 +54,7 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
     </FxCompile>
-    <FxCompile Include="src\shader\common_ps.hlsl">
+    <FxCompile Include="src\shader\mesh_ps.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
@@ -52,7 +62,18 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\bindable\ConstantBuffer.h" />
+    <ClInclude Include="src\bindable\IBindable.h" />
+    <ClInclude Include="src\bindable\IndexBuffer.h" />
+    <ClInclude Include="src\bindable\InputLayout.h" />
+    <ClInclude Include="src\bindable\PixelShader.h" />
+    <ClInclude Include="src\bindable\Texture.h" />
+    <ClInclude Include="src\bindable\TextureCube.h" />
+    <ClInclude Include="src\bindable\TextureSampler.h" />
+    <ClInclude Include="src\bindable\VertexBuffer.h" />
+    <ClInclude Include="src\bindable\VertexShader.h" />
     <ClInclude Include="src\Cubemap.h" />
+    <ClInclude Include="src\drawable\IDrawable.h" />
     <ClInclude Include="src\Grid.h" />
     <ClInclude Include="src\Camera.h" />
     <ClInclude Include="src\Graphics.h" />
@@ -105,7 +126,7 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>.\assimp\include;.\src\imgui;$(IncludePath)</IncludePath>
+    <IncludePath>.\src;.\assimp\include;.\src\imgui;$(IncludePath)</IncludePath>
     <LibraryPath>.\assimp\lib\Debug;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

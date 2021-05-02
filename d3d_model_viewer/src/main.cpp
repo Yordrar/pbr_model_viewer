@@ -26,8 +26,26 @@
 #include "Vertex.h"
 #include "Grid.h"
 #include "Cubemap.h"
+#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#include <drawable/IDrawable.h>
+#include <bindable/IBindable.h>
+#include <bindable/VertexBuffer.h>
+#include <bindable/IndexBuffer.h>
+#include <bindable/InputLayout.h>
+#include <bindable/VertexShader.h>
+#include <bindable/PixelShader.h>
+#include <bindable/Texture.h>
+#include <bindable/TextureSampler.h>
 
+D3D11_INPUT_ELEMENT_DESC vertex_desc_buffer[6] = {
+	{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+	{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
+	{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0},
+	{"TEXCOORDS", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D11_INPUT_PER_VERTEX_DATA, 0},
+	{"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 48, D3D11_INPUT_PER_VERTEX_DATA, 0},
+	{"BITANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 60, D3D11_INPUT_PER_VERTEX_DATA, 0}
+};
 
 DirectX::XMFLOAT2 operator-(DirectX::XMFLOAT2 a, DirectX::XMFLOAT2 b)
 {
@@ -48,52 +66,12 @@ DirectX::XMFLOAT3 operator-(DirectX::XMFLOAT3 a, DirectX::XMFLOAT3 b)
 	return result;
 }
 
-namespace Colors {
-	XMGLOBALCONST DirectX::XMFLOAT4 White = { 1.0f, 1.0f, 1.0f, 1.0f };
-	XMGLOBALCONST DirectX::XMFLOAT4 Black = { 0.0f, 0.0f, 0.0f, 1.0f };
-	XMGLOBALCONST DirectX::XMFLOAT4 Red = { 1.0f, 0.0f, 0.0f, 1.0f };
-	XMGLOBALCONST DirectX::XMFLOAT4 Green = { 0.0f, 1.0f, 0.0f, 1.0f };
-	XMGLOBALCONST DirectX::XMFLOAT4 Blue = { 0.0f, 0.0f, 1.0f, 1.0f };
-	XMGLOBALCONST DirectX::XMFLOAT4 Yellow = { 1.0f, 1.0f, 0.0f, 1.0f };
-	XMGLOBALCONST DirectX::XMFLOAT4 Cyan = { 0.0f, 1.0f, 1.0f, 1.0f };
-	XMGLOBALCONST DirectX::XMFLOAT4 Magenta = { 1.0f, 0.0f, 1.0f, 1.0f };
-}
-
 // Window parameters
 int screen_width = 1280;
 int screen_height = 720;
 
-// Vertex buffer, its buffer description and its subresource data
-Vertex* vertex_buffer_data = nullptr;
-int vertices_count = 0;
-D3D11_BUFFER_DESC vertex_buffer_desc;
-D3D11_SUBRESOURCE_DATA vertex_subresource_data;
-ID3D11Buffer* vertex_buffer = nullptr;
-UINT stride = sizeof(Vertex);
-UINT offset = 0;
-
-// Vertex indices buffer, its buffer description and its subresource data
-UINT* vertex_indices_data = nullptr;
-int indices_count = 0;
-D3D11_BUFFER_DESC vertex_indices_desc;
-D3D11_SUBRESOURCE_DATA vertex_indices_subresource_data;
-ID3D11Buffer* vertex_index_buffer = nullptr;
-
-// PBR stuff
-D3D11_TEXTURE2D_DESC pbr_texture_desc = {};
-ID3D11SamplerState* texture_sampler_state = nullptr;
-unsigned char* albedo_map = nullptr;
-ID3D11Texture2D* albedo_texture;
-ID3D11ShaderResourceView* albedo_srv;
-unsigned char* normal_map = nullptr;
-ID3D11Texture2D* normal_texture;
-ID3D11ShaderResourceView* normal_srv;
-unsigned char* metallic_map = nullptr;
-ID3D11Texture2D* metallic_texture;
-ID3D11ShaderResourceView* metallic_srv;
-unsigned char* roughness_map = nullptr;
-ID3D11Texture2D* roughness_texture;
-ID3D11ShaderResourceView* roughness_srv;
+// Mesh
+IDrawable mesh;
 
 // View options
 bool show_wireframe = false;
@@ -115,7 +93,7 @@ float near_plane = 0.1f;
 float far_plane = 500.0f;
 
 
-void load_obj_file(std::string filename) {
+void load_obj_file(Graphics* gfx, std::string filename) {
 	show_loading_popup = true;
 	
 	Assimp::Importer importer;
@@ -130,154 +108,49 @@ void load_obj_file(std::string filename) {
 		aiProcess_SortByPType);
 
 	aiNode* rootNode = scene->mRootNode;
-	aiMesh* mesh = scene->mMeshes[rootNode->mChildren[0]->mMeshes[0]];
+	aiMesh* ai_mesh = scene->mMeshes[rootNode->mChildren[0]->mMeshes[0]];
 
 	// Destroy old vertex buffer if existed and create new with parsed vertices
-	vertices_count = mesh->mNumVertices;
-	if (vertex_buffer_data) delete[] vertex_buffer_data;
-	vertex_buffer_data = new Vertex[vertices_count];
-	for (unsigned int i = 0; i < mesh->mNumVertices; i++)
+	UINT vertices_count = ai_mesh->mNumVertices;
+	Vertex* vertex_buffer_data = new Vertex[vertices_count];
+	for (unsigned int i = 0; i < ai_mesh->mNumVertices; i++)
 	{
 		Vertex vert;
-		vert.position.x = mesh->mVertices[i].x;
-		vert.position.y = mesh->mVertices[i].y;
-		vert.position.z = mesh->mVertices[i].z;
+		vert.position.x = ai_mesh->mVertices[i].x;
+		vert.position.y = ai_mesh->mVertices[i].y;
+		vert.position.z = ai_mesh->mVertices[i].z;
 
-		vert.normal.x = mesh->mNormals[i].x;
-		vert.normal.y = mesh->mNormals[i].y;
-		vert.normal.z = mesh->mNormals[i].z;
+		vert.normal.x = ai_mesh->mNormals[i].x;
+		vert.normal.y = ai_mesh->mNormals[i].y;
+		vert.normal.z = ai_mesh->mNormals[i].z;
 
-		vert.uvs.x = mesh->mTextureCoords[0][i].x;
-		vert.uvs.y = mesh->mTextureCoords[0][i].y;
+		vert.uvs.x = ai_mesh->mTextureCoords[0][i].x;
+		vert.uvs.y = ai_mesh->mTextureCoords[0][i].y;
 
-		vert.tangent.x = mesh->mTangents[i].x;
-		vert.tangent.y = mesh->mTangents[i].y;
-		vert.tangent.z = mesh->mTangents[i].z;
+		vert.tangent.x = ai_mesh->mTangents[i].x;
+		vert.tangent.y = ai_mesh->mTangents[i].y;
+		vert.tangent.z = ai_mesh->mTangents[i].z;
 
-		vert.bitangent.x = mesh->mBitangents[i].x;
-		vert.bitangent.y = mesh->mBitangents[i].y;
-		vert.bitangent.z = mesh->mBitangents[i].z;
+		vert.bitangent.x = ai_mesh->mBitangents[i].x;
+		vert.bitangent.y = ai_mesh->mBitangents[i].y;
+		vert.bitangent.z = ai_mesh->mBitangents[i].z;
 
 		vertex_buffer_data[i] = vert;
 	}
+	VertexBuffer* vertices = new VertexBuffer(*gfx, vertex_buffer_data, vertices_count);
 
 	// Destroy old index buffer if existed and create new with parsed indices
-	indices_count = mesh->mNumFaces * 3;
-	if (vertex_indices_data) delete[] vertex_indices_data;
-	vertex_indices_data = new UINT[indices_count];
-	for (unsigned int i = 0; i < mesh->mNumFaces; i++)
+	UINT indices_count = ai_mesh->mNumFaces * 3;
+	UINT* vertex_indices_data = new UINT[indices_count];
+	for (unsigned int i = 0; i < ai_mesh->mNumFaces; i++)
 	{
-		aiFace face = mesh->mFaces[i];
+		aiFace face = ai_mesh->mFaces[i];
 		for (unsigned int j = 0; j < face.mNumIndices; j++)
 			vertex_indices_data[i * 3 + j] = face.mIndices[j];
 	}
+	IndexBuffer* indices = new IndexBuffer(*gfx, vertex_indices_data, indices_count);
 
-	// Create vertex buffer description
-	vertex_buffer_desc.ByteWidth = vertices_count * sizeof(Vertex);
-	vertex_buffer_desc.Usage = D3D11_USAGE_IMMUTABLE;
-	vertex_buffer_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	vertex_buffer_desc.CPUAccessFlags = 0;
-	vertex_buffer_desc.MiscFlags = 0;
-	vertex_buffer_desc.StructureByteStride = sizeof(Vertex);
-	vertex_subresource_data.pSysMem = vertex_buffer_data;
-	// Create hardware vertex buffer and bind it to the input assembler
-	if (vertex_buffer) vertex_buffer->Release();
-	Graphics::get()->d3d_device->CreateBuffer(&vertex_buffer_desc, &vertex_subresource_data, &vertex_buffer);
-
-
-	// Create vertex indices buffer description
-	vertex_indices_desc.ByteWidth = indices_count * sizeof(UINT);
-	vertex_indices_desc.Usage = D3D11_USAGE_IMMUTABLE;
-	vertex_indices_desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	vertex_indices_desc.CPUAccessFlags = 0;
-	vertex_indices_desc.MiscFlags = 0;
-	vertex_indices_desc.StructureByteStride = sizeof(UINT);
-	vertex_indices_subresource_data.pSysMem = vertex_indices_data;
-	// Create hardware vertex index buffer and bind it to the input assembler
-	if (vertex_index_buffer) vertex_index_buffer->Release();
-	Graphics::get()->d3d_device->CreateBuffer(&vertex_indices_desc, &vertex_indices_subresource_data, &vertex_index_buffer);
-
-
-	int width, height, nrChannels;
-	albedo_map = stbi_load("./albedo.tga", &width, &height, &nrChannels, 4);
-	normal_map = stbi_load("./normal.tga", &width, &height, &nrChannels, 4);
-	metallic_map = stbi_load("./metallic.tga", &width, &height, &nrChannels, 4);
-	roughness_map = stbi_load("./roughness.tga", &width, &height, &nrChannels, 4);
-
-	pbr_texture_desc.Width = width;
-	pbr_texture_desc.Height = height;
-	pbr_texture_desc.MipLevels = 1;
-	pbr_texture_desc.ArraySize = 1;
-	pbr_texture_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	pbr_texture_desc.SampleDesc = { 1, 0 };
-	pbr_texture_desc.Usage = D3D11_USAGE_DEFAULT;
-	pbr_texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-	pbr_texture_desc.CPUAccessFlags = 0;
-	pbr_texture_desc.MiscFlags = 0;
-
-	D3D11_SAMPLER_DESC texture_sampler_desc = {};
-	texture_sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-	texture_sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-	texture_sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-	texture_sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-	texture_sampler_desc.MipLODBias = 0.0f;
-	texture_sampler_desc.MaxAnisotropy = 1;
-	texture_sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-	texture_sampler_desc.MinLOD = -FLT_MAX;
-	texture_sampler_desc.MaxLOD = FLT_MAX;
-	Graphics::get()->d3d_device->CreateSamplerState(&texture_sampler_desc, &texture_sampler_state);
-
-	{
-		D3D11_SUBRESOURCE_DATA subres_data;
-		subres_data.pSysMem = albedo_map;
-		subres_data.SysMemPitch = width * 4;
-		subres_data.SysMemSlicePitch = 0;
-		Graphics::get()->d3d_device->CreateTexture2D(&pbr_texture_desc, &subres_data, &albedo_texture);
-		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Format = pbr_texture_desc.Format;
-		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D = { 0, 1 };
-		Graphics::get()->d3d_device->CreateShaderResourceView(albedo_texture, &srvDesc, &albedo_srv);
-	}
-
-	{
-		D3D11_SUBRESOURCE_DATA subres_data;
-		subres_data.pSysMem = normal_map;
-		subres_data.SysMemPitch = width * 4;
-		subres_data.SysMemSlicePitch = 0;
-		Graphics::get()->d3d_device->CreateTexture2D(&pbr_texture_desc, &subres_data, &normal_texture);
-		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Format = pbr_texture_desc.Format;
-		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D = { 0, 1 };
-		Graphics::get()->d3d_device->CreateShaderResourceView(normal_texture, &srvDesc, &normal_srv);
-	}
-
-	{
-		D3D11_SUBRESOURCE_DATA subres_data;
-		subres_data.pSysMem = metallic_map;
-		subres_data.SysMemPitch = width * 4;
-		subres_data.SysMemSlicePitch = 0;
-		Graphics::get()->d3d_device->CreateTexture2D(&pbr_texture_desc, &subres_data, &metallic_texture);
-		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Format = pbr_texture_desc.Format;
-		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D = { 0, 1 };
-		Graphics::get()->d3d_device->CreateShaderResourceView(metallic_texture, &srvDesc, &metallic_srv);
-	}
-
-	{
-		D3D11_SUBRESOURCE_DATA subres_data;
-		subres_data.pSysMem = roughness_map;
-		subres_data.SysMemPitch = width * 4;
-		subres_data.SysMemSlicePitch = 0;
-		Graphics::get()->d3d_device->CreateTexture2D(&pbr_texture_desc, &subres_data, &roughness_texture);
-		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Format = pbr_texture_desc.Format;
-		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D = { 0, 1 };
-		Graphics::get()->d3d_device->CreateShaderResourceView(roughness_texture, &srvDesc, &roughness_srv);
-	}
+	mesh.setMesh(vertices, indices);
 
 	show_loading_popup = false;
 	ImGui::CloseCurrentPopup();
@@ -366,28 +239,34 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 	ShowWindow(hwnd, cmdShow);
 
 	// Initialize graphics
-	Graphics::create(hwnd, screen_width, screen_height);
+	Graphics gfx(hwnd, screen_width, screen_height);
 
 	// Camera
-	cam = new Camera(camera_position, camera_lookat_vector, camera_right, camera_up, DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height));
+	cam = new Camera(gfx, camera_position, camera_lookat_vector, camera_right, camera_up, DirectX::XM_PI / 4.0f, float(screen_width) / float(screen_height));
 
 	// Create grid
 	Grid grid;
 
 	// Create cubemap
-	Cubemap cubemap("./cubemap_1k/");
+	Cubemap cubemap(gfx, "./cubemap_1k/");
+	VertexShader* cubemap_vs_shader = new VertexShader(gfx, "cubemap_vs.cso");
+	cubemap.addBindable(cubemap_vs_shader);
+	cubemap.addBindable(new InputLayout(gfx, vertex_desc_buffer, sizeof(vertex_desc_buffer) / sizeof(D3D11_INPUT_ELEMENT_DESC), cubemap_vs_shader->getBytecode()));
 
 	// Initialize initial camera position and orientation
 	cam->rotate(30, 0);
 	cam->rotate(0, -45);
 
-	// Setup Dear ImGui context
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGuiIO& io = ImGui::GetIO(); (void)io;
-	ImGui::StyleColorsDark();
-	ImGui_ImplWin32_Init(hwnd);
-	ImGui_ImplDX11_Init(Graphics::get()->d3d_device, Graphics::get()->d3d_context);
+	// Initialize mesh
+	VertexShader* mesh_vs_shader = new VertexShader(gfx, "mesh_vs.cso");
+	mesh.addBindable(mesh_vs_shader);
+	mesh.addBindable(new InputLayout(gfx, vertex_desc_buffer, sizeof(vertex_desc_buffer) / sizeof(D3D11_INPUT_ELEMENT_DESC), mesh_vs_shader->getBytecode()));
+	mesh.addBindable(new PixelShader(gfx, "mesh_ps.cso"));
+	mesh.addBindable(new Texture(gfx, "./albedo.tga", 0));
+	mesh.addBindable(new Texture(gfx, "./normal.tga", 1));
+	mesh.addBindable(new Texture(gfx, "./metallic.tga", 2));
+	mesh.addBindable(new Texture(gfx, "./roughness.tga", 3));
+	mesh.addBindable(new TextureSampler(gfx, 0));
 
 	const FLOAT clear_color[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
 	// Event loop
@@ -398,42 +277,30 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 			DispatchMessage(&msg);
 		}
 
-		Graphics::get()->clear(clear_color);
+		// Draw if not loading any mesh
+		if (!show_loading_popup) {
 
-		if (show_grid)
-		{
-			grid.draw();
-		}
-		if (show_cubemap)
-		{
-			cubemap.draw();
-		}
+			gfx.clear(clear_color);
 
-		// Draw mesh if any has been read
-		if (!show_loading_popup && vertex_buffer_data && vertex_indices_data) {
+			if (show_grid)
+			{
+				grid.draw();
+			}
+
+			if (show_cubemap)
+			{
+				cubemap.draw(gfx);
+			}
 
 			// Set wireframe or solid mode according to view options
 			if (show_wireframe) {
-				Graphics::get()->change_fill_mode(D3D11_FILL_WIREFRAME);
+				gfx.change_fill_mode(D3D11_FILL_WIREFRAME);
 			}
 			else {
-				Graphics::get()->change_fill_mode(D3D11_FILL_SOLID);
+				gfx.change_fill_mode(D3D11_FILL_SOLID);
 			}
 
-			Graphics::get()->set_vertex_shader(Graphics::get()->vertex_shader);
-			Graphics::get()->set_pixel_shader(Graphics::get()->pixel_shader);
-			Graphics::get()->d3d_context->PSSetSamplers(1, 1, &texture_sampler_state);
-			Graphics::get()->d3d_context->PSSetShaderResources(1, 1, &albedo_srv);
-			Graphics::get()->d3d_context->PSSetShaderResources(2, 1, &normal_srv);
-			Graphics::get()->d3d_context->PSSetShaderResources(3, 1, &metallic_srv);
-			Graphics::get()->d3d_context->PSSetShaderResources(4, 1, &roughness_srv);
-			// Set vertex and index buffer of mesh
-			Graphics::get()->d3d_context->IASetVertexBuffers(0, 1, &vertex_buffer, &stride, &offset);
-			Graphics::get()->d3d_context->IASetIndexBuffer(vertex_index_buffer, DXGI_FORMAT_R32_UINT, 0);
-			// Set primitive topology type to triangle list
-			Graphics::get()->d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			//Draw mesh
-			Graphics::get()->d3d_context->DrawIndexed(indices_count, 0, 0);
+			mesh.draw(gfx);
 		}
 
 		// Start the Dear ImGui frame
@@ -464,7 +331,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 			if (igfd::ImGuiFileDialog::Instance()->IsOk) {
 				std::string filename = igfd::ImGuiFileDialog::Instance()->GetFilepathName();
 				if (load_thread.joinable()) load_thread.join();
-				load_thread = std::thread(load_obj_file, filename);
+				load_thread = std::thread(load_obj_file, &gfx, filename);
 				ImGui::OpenPopup("Loading...", 0);
 			}
 			igfd::ImGuiFileDialog::Instance()->CloseDialog("open_dialog");
@@ -483,18 +350,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 		ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
 		// Trigger a back buffer swap in the swap chain
-		Graphics::get()->present();
+		gfx.present();
 	}
 
 	// Cleanup
 	// Loading thread cleanup
 	if (load_thread.joinable()) load_thread.join();
-	// ImGui cleanup
-	ImGui_ImplDX11_Shutdown();
-	ImGui_ImplWin32_Shutdown();
-	ImGui::DestroyContext();
-
-	Graphics::destroy();
 
 	// Windows cleanup
 	::DestroyWindow(hwnd);

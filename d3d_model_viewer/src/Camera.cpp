@@ -2,23 +2,30 @@
 
 #include "Graphics.h"
 
-Camera::Camera(DirectX::XMVECTOR position, DirectX::XMVECTOR lookat, DirectX::XMVECTOR right, DirectX::XMVECTOR up, float fov, float aspect_ratio)
-	: position(position), up(up), right(right), lookat(lookat), fov(fov), aspect_ratio(aspect_ratio)
+Camera::Camera(Graphics& gfx, DirectX::XMVECTOR position, DirectX::XMVECTOR lookat, DirectX::XMVECTOR right, DirectX::XMVECTOR up, float fov, float aspect_ratio)
+	: m_graphics(gfx)
+	, position(position)
+	, up(up)
+	, right(right)
+	, lookat(lookat)
+	, fov(fov)
+	, aspect_ratio(aspect_ratio)
 {
-	persp_transf = DirectX::XMMatrixTranspose(
+	m_viewProjMatrix = DirectX::XMMatrixTranspose(
 		DirectX::XMMatrixLookAtRH(position, lookat, up) *
 		DirectX::XMMatrixPerspectiveFovRH(fov, aspect_ratio, 0.1f, 500.f)
 	);
-	persp_transf_buffer = Graphics::get()->create_buffer(&persp_transf, sizeof(DirectX::XMMATRIX), D3D11_BIND_CONSTANT_BUFFER);
-	Graphics::get()->set_buffer(0, persp_transf_buffer);
+	m_viewProjBuffer = new ConstantBuffer(gfx, &m_viewProjMatrix, 0);
+	m_viewProjBuffer->bind(gfx);
 
-	position_buffer = Graphics::get()->create_buffer(&position, sizeof(DirectX::XMVECTOR), D3D11_BIND_CONSTANT_BUFFER);
-	Graphics::get()->set_buffer(1, position_buffer);
+	m_positionBuffer = new ConstantBuffer(gfx, &position, 1);
+	m_positionBuffer->bind(gfx);
 }
 
 Camera::~Camera()
 {
-	persp_transf_buffer->Release();
+	delete m_viewProjBuffer;
+	delete m_positionBuffer;
 }
 
 void Camera::move(float delta_x, float delta_y, float delta_z)
@@ -27,7 +34,7 @@ void Camera::move(float delta_x, float delta_y, float delta_z)
 	position.m128_f32[1] += delta_y;
 	position.m128_f32[2] += delta_z;
 
-	persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(position, lookat, up) * DirectX::XMMatrixPerspectiveFovRH(fov, aspect_ratio, 0.1f, 500.f));
+	m_viewProjMatrix = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(position, lookat, up) * DirectX::XMMatrixPerspectiveFovRH(fov, aspect_ratio, 0.1f, 500.f));
 
 	update_camera_shader_buffers();
 }
@@ -71,15 +78,13 @@ void Camera::rotate(float angles_x, float angles_y)
 	up = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(lookat, DirectX::XMVectorNegate(right)));
 	up.m128_f32[3] = 1;
 
-	persp_transf = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(position, lookat, up) * DirectX::XMMatrixPerspectiveFovRH(fov, aspect_ratio, 0.1f, 500.f));
+	m_viewProjMatrix = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(position, lookat, up) * DirectX::XMMatrixPerspectiveFovRH(fov, aspect_ratio, 0.1f, 500.f));
 
 	update_camera_shader_buffers();
 }
 
 void Camera::update_camera_shader_buffers()
 {
-	Graphics::get()->update_buffer(persp_transf_buffer, &persp_transf, sizeof(DirectX::XMMATRIX));
-	Graphics::get()->set_buffer(0, persp_transf_buffer);
-	Graphics::get()->update_buffer(position_buffer, &position, sizeof(DirectX::XMVECTOR));
-	Graphics::get()->set_buffer(1, position_buffer);
+	m_viewProjBuffer->update(m_graphics, &m_viewProjMatrix, sizeof(DirectX::XMMATRIX));
+	m_positionBuffer->update(m_graphics, &position, sizeof(DirectX::XMVECTOR));
 }
