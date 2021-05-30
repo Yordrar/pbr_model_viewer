@@ -39,6 +39,10 @@ Cubemap::Cubemap(Graphics& gfx, std::string path)
 
 	setMesh(new VertexBuffer(gfx, data, 8), new IndexBuffer(gfx, index_data, 36));
 
+
+	VertexShader* cubemap_vs_shader = new VertexShader(gfx, "cubemap_vs.cso");
+	addBindable(cubemap_vs_shader);
+	addBindable(new InputLayout(gfx, vertex_desc_buffer, sizeof(vertex_desc_buffer) / sizeof(D3D11_INPUT_ELEMENT_DESC), cubemap_vs_shader->getBytecode()));
 	addBindable(new PixelShader(gfx, "cubemap_ps.cso"));
 	addBindable(new TextureSampler(gfx, 0));
 	addBindable(new TextureCube(gfx, path));

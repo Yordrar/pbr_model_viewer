@@ -20,21 +20,29 @@ float ggx(float3 N, float3 H, float roughness)
     return num / denom;
 }
 
-float schlickggx(float3 N, float3 V, float roughness)
+float GeometrySchlickGGX(float NdotV, float roughness)
 {
     float r = (roughness + 1.0);
     float k = (r * r) / 8.0;
 
-    float NdotV = max(dot(N, V), 0.0);
     float num = NdotV;
     float denom = NdotV * (1.0 - k) + k;
 	
     return num / denom;
 }
+float GeometrySmith(float3 N, float3 V, float3 L, float roughness)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+	
+    return ggx1 * ggx2;
+}
 
 float3 fresnelSchlick(float cosTheta, float3 F0)
 {
-    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+    return F0 + (1.0 - F0) * pow(max(1.0 - cosTheta, 0.0), 5.0);
 }
 
 float4 main(float4 pos : SV_POSITION, float3 cam_pos : POSITION0, float3 world_pos : POSITION1, float3 normal : NORMAL0, float2 uvs : TEXCOORDS, float3 tangent : TANGENT, float3 bitangent : BITANGENT) : SV_Target
@@ -46,28 +54,29 @@ float4 main(float4 pos : SV_POSITION, float3 cam_pos : POSITION0, float3 world_p
     float roughness = roughness_tex.Sample(tex_sampler, UV).r;
     
     float3 lightColor = float3(1.0, 1.0, 1.0);
-    float3 L = normalize(float3(-1.0, 1.0, 1.0));
+    float3 L = normalize(float3(1.0, 1.0, 1.0));
     float3 V = normalize(cam_pos - world_pos);
     float3 H = normalize(L + V);
     float3 T = normalize(tangent);
-    float3 B = normalize(bitangent);
+    float3 B = normalize(cross(normal, tangent));
     float3 N = normalize(normal);
     float3x3 TBN = float3x3(T, B, N);
     float3 sampled_N = normal_tex.Sample(tex_sampler, UV).xyz;
-    sampled_N = normalize(N * 2.0 - 1.0);
+    sampled_N = normalize(sampled_N * 2.0 - 1.0);
     N = normalize(mul(TBN, sampled_N));
     
     float NdotL = max(dot(N, L), 0.0);
     
-    // Direct Lighting
+    // Direct lighting
     float3 direct_light = lightColor;
     
     // Specular lighting
     float D = ggx(N, H, roughness);
     float3 F0 = float3(0.04, 0.04, 0.04);
     F0 = lerp(F0, albedo, metallic);
-    float3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-    float G = schlickggx(N, V, roughness) * schlickggx(N, L, roughness);
+    float HdotV = dot(H, V);
+    float3 F = fresnelSchlick(max(HdotV, 0.0), F0);
+    float G = GeometrySmith(N, V, L, roughness);
     
     float3 kS = F;
     float3 kD = float3(1.0, 1.0, 1.0) - kS;

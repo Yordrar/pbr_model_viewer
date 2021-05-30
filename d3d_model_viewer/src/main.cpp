@@ -38,15 +38,6 @@
 #include <bindable/Texture.h>
 #include <bindable/TextureSampler.h>
 
-D3D11_INPUT_ELEMENT_DESC vertex_desc_buffer[6] = {
-	{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-	{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
-	{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0},
-	{"TEXCOORDS", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D11_INPUT_PER_VERTEX_DATA, 0},
-	{"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 48, D3D11_INPUT_PER_VERTEX_DATA, 0},
-	{"BITANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 60, D3D11_INPUT_PER_VERTEX_DATA, 0}
-};
-
 DirectX::XMFLOAT2 operator-(DirectX::XMFLOAT2 a, DirectX::XMFLOAT2 b)
 {
 	DirectX::XMFLOAT2 result;
@@ -249,10 +240,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 
 	// Create cubemap
 	Cubemap cubemap(gfx, "./cubemap_1k/");
-	VertexShader* cubemap_vs_shader = new VertexShader(gfx, "cubemap_vs.cso");
-	cubemap.addBindable(cubemap_vs_shader);
-	cubemap.addBindable(new InputLayout(gfx, vertex_desc_buffer, sizeof(vertex_desc_buffer) / sizeof(D3D11_INPUT_ELEMENT_DESC), cubemap_vs_shader->getBytecode()));
-
+	
 	// Initialize initial camera position and orientation
 	cam->rotate(30, 0);
 	cam->rotate(0, -45);
@@ -262,13 +250,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 	mesh.addBindable(mesh_vs_shader);
 	mesh.addBindable(new InputLayout(gfx, vertex_desc_buffer, sizeof(vertex_desc_buffer) / sizeof(D3D11_INPUT_ELEMENT_DESC), mesh_vs_shader->getBytecode()));
 	mesh.addBindable(new PixelShader(gfx, "mesh_ps.cso"));
-	mesh.addBindable(new Texture(gfx, "./albedo.tga", 0));
-	mesh.addBindable(new Texture(gfx, "./normal.tga", 1));
-	mesh.addBindable(new Texture(gfx, "./metallic.tga", 2));
-	mesh.addBindable(new Texture(gfx, "./roughness.tga", 3));
+	mesh.addBindable(new Texture(gfx, "./albedo.png", 0));
+	mesh.addBindable(new Texture(gfx, "./normal.png", 1));
+	mesh.addBindable(new Texture(gfx, "./metallic.png", 2));
+	mesh.addBindable(new Texture(gfx, "./roughness.png", 3));
 	mesh.addBindable(new TextureSampler(gfx, 0));
 
-	const FLOAT clear_color[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
+	const FLOAT clear_color_black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	const FLOAT clear_color_grey[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
 	// Event loop
 	MSG msg = { 0 };
 	while (msg.message != WM_QUIT) {
@@ -280,7 +269,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 		// Draw if not loading any mesh
 		if (!show_loading_popup) {
 
-			gfx.clear(clear_color);
+			gfx.clear(clear_color_black);
 
 			if (show_grid)
 			{
