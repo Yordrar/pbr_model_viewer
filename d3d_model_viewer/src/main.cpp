@@ -303,7 +303,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 			if(ImGui::BeginMenu("File"))
 			{
 				if (ImGui::MenuItem("Open File...")) {
-					igfd::ImGuiFileDialog::Instance()->OpenDialog("open_dialog", "Choose mesh file", ".obj", ".");
+					ImGuiFileDialog::Instance()->OpenDialog("open_dialog", "Choose mesh file", ".obj", ".");
 				}
 				ImGui::EndMenu();
 			}
@@ -316,14 +316,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 			}
 			ImGui::EndMainMenuBar();
 		}
-		if (igfd::ImGuiFileDialog::Instance()->FileDialog("open_dialog")) {
-			if (igfd::ImGuiFileDialog::Instance()->IsOk) {
-				std::string filename = igfd::ImGuiFileDialog::Instance()->GetFilepathName();
+		if (ImGuiFileDialog::Instance()->Display("open_dialog")) {
+			if (ImGuiFileDialog::Instance()->IsOk()) {
+				std::string filename = ImGuiFileDialog::Instance()->GetFilePathName();
 				if (load_thread.joinable()) load_thread.join();
 				load_thread = std::thread(load_obj_file, &gfx, filename);
 				ImGui::OpenPopup("Loading...", 0);
 			}
-			igfd::ImGuiFileDialog::Instance()->CloseDialog("open_dialog");
+			ImGuiFileDialog::Instance()->Close();
 		}
 		if (show_loading_popup) {
 			ImGui::SetNextWindowSize(ImVec2(160, 50));
