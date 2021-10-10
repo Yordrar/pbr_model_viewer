@@ -94,9 +94,17 @@ float4 main(float4 pos : SV_POSITION, float3 cam_pos : POSITION0, float3 world_p
     float3 diffuse = albedo;
     
     float3 col = (kD * diffuse / PI + specular) * direct_light * NdotL;
-    float3 ambient = float3(0.03, 0.03, 0.03) * diffuse;
+
+    // Ambient lighting
+    float3 ambientUp = cubemap_tex.Sample( tex_sampler, float3( 0, 1, 0 ) );
+    float3 ambientDown = cubemap_tex.Sample( tex_sampler, float3( 0, -1, 0 ) );
+    float3 ambient = (N.y*ambientUp + (1-N.y)*ambientDown) * diffuse;
     col = ambient + col;
+
+    // Reinhardt tonemapping
     col = col / (col + float3(1.0, 1.0, 1.0));
+
+    // Gamma correction
     col = sqrt(col);
     
     return float4(col, 1.0);

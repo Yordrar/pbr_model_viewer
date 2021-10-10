@@ -310,7 +310,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 			{
 				if ( ImGui::MenuItem( "Open Mesh File..." ) )
 				{
-					ImGuiFileDialog::Instance()->OpenDialog( "open_mesh_dialog", "Choose mesh file", "Mesh file(*.obj *.fbx){.obj,.fbx}", "." );
+					ImGuiFileDialog::Instance()->OpenDialog( "open_mesh_dialog", "Choose mesh file", "Mesh file(*.obj *.fbx){.obj,.fbx,.OBJ,.FBX}", "." );
 				}
 				if ( ImGui::MenuItem( "Open Cubemap Folder..." ) )
 				{
@@ -331,19 +331,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 		{
 			if ( ImGui::Button( "Load albedo texture" ) )
 			{
-				ImGuiFileDialog::Instance()->OpenDialog( "open_albedo_dialog", "Choose albedo texture", "Image files (*.jpeg/jpg *.png *.tga *.bmp){.jpeg,.jpg,.png,.tga,.bmp}", "." );
+				ImGuiFileDialog::Instance()->OpenDialog( "open_albedo_dialog", "Choose albedo texture", "Image files (*.jpeg/jpg *.png *.tga *.bmp){.jpeg,.jpg,.png,.tga,.bmp,.JPEG,.JPG,.PNG,.BMP,.TGA}", "." );
 			}
 			if ( ImGui::Button( "Load normal map" ) )
 			{
-				ImGuiFileDialog::Instance()->OpenDialog( "open_normal_dialog", "Choose normal map", "Image files (*.jpeg/jpg *.png *.tga *.bmp){.jpeg,.jpg,.png,.tga,.bmp}", "." );
+				ImGuiFileDialog::Instance()->OpenDialog( "open_normal_dialog", "Choose normal map", "Image files (*.jpeg/jpg *.png *.tga *.bmp){.jpeg,.jpg,.png,.tga,.bmp,.JPEG,.JPG,.PNG,.BMP,.TGA}", "." );
 			}
 			if ( ImGui::Button( "Load metallic map" ) )
 			{
-				ImGuiFileDialog::Instance()->OpenDialog( "open_metallic_dialog", "Choose metallic map", "Image files (*.jpeg/jpg *.png *.tga *.bmp){.jpeg,.jpg,.png,.tga,.bmp}", "." );
+				ImGuiFileDialog::Instance()->OpenDialog( "open_metallic_dialog", "Choose metallic map", "Image files (*.jpeg/jpg *.png *.tga *.bmp){.jpeg,.jpg,.png,.tga,.bmp,.JPEG,.JPG,.PNG,.BMP,.TGA}", "." );
 			}
             if ( ImGui::Button( "Load roughness map" ) )
             {
-                ImGuiFileDialog::Instance()->OpenDialog( "open_roughness_dialog", "Choose roughness map", "Image files (*.jpeg/jpg *.png *.tga *.bmp){.jpeg,.jpg,.png,.tga,.bmp}", "." );
+                ImGuiFileDialog::Instance()->OpenDialog( "open_roughness_dialog", "Choose roughness map", "Image files (*.jpeg/jpg *.png *.tga *.bmp){.jpeg,.jpg,.png,.tga,.bmp,.JPEG,.JPG,.PNG,.BMP,.TGA}", "." );
             }
 			ImGui::End();
 		}
